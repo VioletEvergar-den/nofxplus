@@ -45,9 +45,20 @@ type councilStep struct {
 	Concerns    []string `json:"concerns,omitempty"`
 	Payload     any      `json:"payload,omitempty"`
 	Sources     []string `json:"sources,omitempty"`
+	Activity    []string `json:"activity,omitempty"` // Agent 动作流水（工具调用/追问/发言）
 	Error       string   `json:"error,omitempty"`
 	DurationMs  int64    `json:"duration_ms"`
-	Round       int      `json:"round"` // 1情报 2策略 3审核
+	Round       int      `json:"round"` // 1研判 2制定 3定稿
+}
+
+// councilTranscriptEntry 圆桌对话流条目（Agent 间的消息传递记录）
+type councilTranscriptEntry struct {
+	Role      string    `json:"role"`
+	Emoji     string    `json:"emoji"`
+	Name      string    `json:"name"`
+	Kind      string    `json:"kind"` // speech|tool_call|tool_result|question|answer|system
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // councilFinalResult 会诊最终结果
@@ -68,7 +79,10 @@ type councilState struct {
 	Intent     string              `json:"intent"`
 	Language   string              `json:"language"`
 	SearchOn   bool                `json:"search_on"`
+	Budget     int                 `json:"budget"`      // Agent 全场调用总预算（用户可设）
+	UsedBudget int32               `json:"used_budget"` // 已消耗调用次数（atomic）
 	Steps      []*councilStep      `json:"steps"`
+	Transcript []councilTranscriptEntry `json:"transcript,omitempty"` // 圆桌对话流
 	Result     *councilFinalResult `json:"result,omitempty"`
 	Error      string              `json:"error,omitempty"`
 	CreatedAt  time.Time           `json:"created_at"`
@@ -107,18 +121,13 @@ type councilRoleDef struct {
 	Round  int
 }
 
-// 9 个步骤定义（含隐藏的情报规划）
+// 5 个 Agent 角色（圆桌串行，前序发言全量可见，可自主调用工具）
 var councilRoles = []councilRoleDef{
-	{ID: "intel_planner", Emoji: "🔎", NameZH: "情报规划", NameEN: "Intel Planner", Round: 1},
-	{ID: "market_analyst", Emoji: "🌐", NameZH: "宏观分析师", NameEN: "Market Analyst", Round: 1},
-	{ID: "coin_researcher", Emoji: "🔬", NameZH: "币种研究员", NameEN: "Coin Researcher", Round: 1},
-	{ID: "chief_trader", Emoji: "🎯", NameZH: "首席合约交易员", NameEN: "Chief Trader", Round: 2},
+	{ID: "intel_analyst", Emoji: "🔍", NameZH: "情报分析师", NameEN: "Intel Analyst", Round: 1},
+	{ID: "chief_trader", Emoji: "🎯", NameZH: "首席合约交易员", NameEN: "Chief Trader", Round: 1},
 	{ID: "strategy_architect", Emoji: "🏗️", NameZH: "策略架构师", NameEN: "Strategy Architect", Round: 2},
-	{ID: "timeframe_engineer", Emoji: "📐", NameZH: "周期指标工程师", NameEN: "Timeframe Engineer", Round: 2},
-	{ID: "coin_planner", Emoji: "🗂️", NameZH: "币种来源规划师", NameEN: "Coin Planner", Round: 2},
-	{ID: "risk_officer", Emoji: "🛡️", NameZH: "风控官", NameEN: "Risk Officer", Round: 3},
-	{ID: "chief_reviewer", Emoji: "⚖️", NameZH: "首席评审", NameEN: "Chief Reviewer", Round: 3},
-	{ID: "prompt_writer", Emoji: "✍️", NameZH: "首席策略撰写官", NameEN: "Chief Prompt Writer", Round: 4},
+	{ID: "risk_reviewer", Emoji: "⚖️", NameZH: "风控评审官", NameEN: "Risk Reviewer", Round: 2},
+	{ID: "prompt_writer", Emoji: "✍️", NameZH: "首席策略撰写官", NameEN: "Chief Prompt Writer", Round: 3},
 }
 
 // ---------- 统一信封 ----------
@@ -1196,8 +1205,9 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 		Intent       string               `json:"intent" binding:"required"`
 		ModelID      string               `json:"model_id" binding:"required"`
 		Language     string               `json:"language"`
-		Mode         string               `json:"mode"` // generate|modify
+		Mode         string               `json:"mode"`        // generate|modify
 		Config       *store.StrategyConfig `json:"config"`
+		AgentBudget  int                  `json:"agent_budget"` // Agent 全场调用总预算（5~40，默认12）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
@@ -1239,6 +1249,16 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 	}
 
 	id := uuid.New().String()
+	if req.AgentBudget == 0 {
+		req.AgentBudget = 12
+	}
+	budget := req.AgentBudget
+	if budget < 5 {
+		budget = 5
+	}
+	if budget > 40 {
+		budget = 40
+	}
 	st := &councilState{
 		ID:        id,
 		UserID:    userID,
@@ -1247,7 +1267,9 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 		Intent:    req.Intent,
 		Language:  req.Language,
 		SearchOn:  getSearxngURL() != "",
+		Budget:    budget,
 		Steps:     make([]*councilStep, 0, len(councilRoles)),
+		Transcript: make([]councilTranscriptEntry, 0),
 		CreatedAt: time.Now(),
 	}
 	for _, r := range councilRoles {
@@ -1264,7 +1286,7 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 	councilStates[id] = st
 	councilStatesMu.Unlock()
 
-	go s.runCouncil(st, req.ModelID, base)
+	go s.runCouncilAgent(st, req.ModelID, base)
 
 	c.JSON(http.StatusOK, gin.H{"council_id": id})
 }

@@ -16,6 +16,7 @@ interface CouncilStep {
   concerns?: string[]
   payload?: Record<string, unknown>
   sources?: string[]
+  activity?: string[]
   error?: string
   duration_ms?: number
   round: number
@@ -28,6 +29,8 @@ interface CouncilState {
   intent: string
   language: string
   search_on: boolean
+  budget?: number
+  used_budget?: number
   steps: CouncilStep[]
   result?: {
     config: StrategyConfig
@@ -48,18 +51,15 @@ interface StrategyAICouncilModalProps {
   currentConfig: StrategyConfig | null
 }
 
-// 步骤展示顺序与轮次分组
+// 步骤展示顺序与轮次分组（Agent 圆桌：3 轮 5 角色）
 const ROUNDS: { round: number; titleKey: string }[] = [
   { round: 1, titleKey: 'round1' },
   { round: 2, titleKey: 'round2' },
   { round: 3, titleKey: 'round3' },
-  { round: 4, titleKey: 'round4' },
 ]
 
 const ROLE_ORDER = [
-  'intel_planner', 'market_analyst', 'coin_researcher',
-  'chief_trader', 'strategy_architect', 'timeframe_engineer', 'coin_planner',
-  'risk_officer', 'chief_reviewer', 'prompt_writer',
+  'intel_analyst', 'chief_trader', 'strategy_architect', 'risk_reviewer', 'prompt_writer',
 ]
 
 // ---------- 配置摘要 ----------
@@ -151,6 +151,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [agentBudget, setAgentBudget] = useState(12)
   const [mode, setMode] = useState<'generate' | 'modify'>(currentConfig ? 'modify' : 'generate')
   // running 步骤的本地起始时间（role → 时间戳），用于显示已用时长
   const stepStartRef = useRef<Map<string, number>>(new Map())
@@ -245,6 +246,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
           model_id: modelId,
           language,
           mode,
+          agent_budget: agentBudget,
           config: mode === 'modify' ? currentConfig : undefined,
         }),
       })
@@ -370,6 +372,22 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                   style={{ background: '#1E2329', border: '1px solid #2B3139' }}
                 />
               </div>
+
+              <div>
+                <label className="block text-[11px] text-[#848E9C] mb-1.5">{t('aiCouncil.budgetLabel', language)}</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={5}
+                    max={40}
+                    value={agentBudget}
+                    onChange={(e) => setAgentBudget(Math.max(5, Math.min(40, Number(e.target.value) || 12)))}
+                    className="w-24 px-3 py-2 rounded-lg text-[12px] text-[#EAECEF] focus:outline-none focus:border-amber-500/50"
+                    style={{ background: '#1E2329', border: '1px solid #2B3139' }}
+                  />
+                  <span className="text-[10px] text-[#848E9C]">{t('aiCouncil.budgetHint', language)}</span>
+                </div>
+              </div>
             </>
           )}
 
@@ -383,6 +401,11 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1E2329] text-[#848E9C]">
                     {t(council.mode === 'modify' ? 'aiCouncil.modeModify' : 'aiCouncil.modeGenerate', language)}
                   </span>
+                  {typeof council.used_budget === 'number' && council.budget ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 tabular-nums">
+                      {t('aiCouncil.budgetUsage', language)}: {council.used_budget}/{council.budget}
+                    </span>
+                  ) : null}
                 </div>
                 {isRunning && (
                   <button onClick={cancelCouncil} className="text-[11px] text-[#F6465D] hover:underline">
@@ -420,6 +443,13 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                               <StepStatusBadge status={step.status} lang={language} />
                             </div>
                           </div>
+                          {step.activity && step.activity.length > 0 && (
+                            <div className="mt-2 space-y-0.5">
+                              {step.activity.map((a, i) => (
+                                <div key={i} className="text-[10px] text-[#848E9C] font-mono truncate">{a}</div>
+                              ))}
+                            </div>
+                          )}
                           {step.summary && <p className="mt-1.5 text-[11px] text-[#B7BDC6] leading-relaxed">{step.summary}</p>}
                           {step.error && <p className="mt-1.5 text-[11px] text-[#F6465D]">{step.error}</p>}
                           {step.concerns && step.concerns.length > 0 && (
