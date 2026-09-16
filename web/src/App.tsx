@@ -1427,12 +1427,12 @@ function TraderDetailsPage({
         </div>
       )}
 
-      {/* 主要内容区：第一行 = 账户曲线(3/5) + 最近决策(2/5)，第二行 = 行情图表，第三行 = 当前持仓 */}
+      {/* 主要内容区：第一行 = 账户曲线(3/5) + 最近决策(2/5)，第二行 = 行情图表(2/5) + 当前持仓(3/5) */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6 items-start">
-        {/* 行情图表（第二行整行） */}
+        {/* 行情图表（第二行左，2/5 宽） */}
         <div
           ref={chartSectionRef}
-          className="lg:col-start-1 lg:col-span-5 lg:row-start-2 chart-container animate-slide-in scroll-mt-32"
+          className="lg:col-start-1 lg:col-span-2 lg:row-start-2 chart-container animate-slide-in scroll-mt-32"
           style={{ animationDelay: '0.15s' }}
         >
           <MarketChartCard
@@ -1447,9 +1447,9 @@ function TraderDetailsPage({
           />
         </div>
 
-        {/* 当前持仓（第三行整行） */}
+        {/* 当前持仓（第二行右，3/5 宽） */}
         <div
-          className="lg:col-start-1 lg:col-span-5 lg:row-start-3 binance-card p-6 animate-slide-in"
+          className="lg:col-start-3 lg:col-span-3 lg:row-start-2 binance-card p-6 animate-slide-in"
           style={{ animationDelay: '0.18s' }}
         >
             <div className="flex items-center justify-between mb-5">
@@ -1859,10 +1859,10 @@ function TraderDetailsPage({
             </select>
           </div>
 
-          {/* 决策列表 - 可滚动 */}
+          {/* 决策列表 - 可滚动（高度与账户曲线卡对齐，避免第一行留空） */}
           <div
             className="space-y-4 overflow-y-auto pr-2"
-            style={{ maxHeight: 'calc(100vh - 280px)' }}
+            style={{ maxHeight: 'max(320px, calc(100vh - 470px))' }}
           >
             {decisions && decisions.length > 0 ? (
               decisions.map((decision, i) => (
