@@ -484,6 +484,9 @@ func (at *AutoTrader) Run() error {
 	// Start drawdown monitoring
 	at.startDrawdownMonitor()
 
+	// Start profit giveback protection monitoring (AI-specified trailing profit protection)
+	at.startProfitGivebackMonitor()
+
 	// Determine order sync interval (use configured value, default to 30 seconds if not set)
 	orderSyncInterval := at.config.OrderSyncInterval
 	if orderSyncInterval == 0 {
@@ -1616,7 +1619,7 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, act
 	}
 
 	// Persist AI-provided SL/TP to the open position record (OrderSync creates the record asynchronously)
-	at.persistInitialSLTP(decision.Symbol, "LONG", decision.StopLoss, decision.TakeProfit)
+	at.persistInitialSLTP(decision.Symbol, "LONG", decision.StopLoss, decision.TakeProfit, decision.ProfitGivebackPct)
 
 	return nil
 }
@@ -1749,7 +1752,7 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *decision.Decision, ac
 	}
 
 	// Persist AI-provided SL/TP to the open position record (OrderSync creates the record asynchronously)
-	at.persistInitialSLTP(decision.Symbol, "SHORT", decision.StopLoss, decision.TakeProfit)
+	at.persistInitialSLTP(decision.Symbol, "SHORT", decision.StopLoss, decision.TakeProfit, decision.ProfitGivebackPct)
 
 	return nil
 }
@@ -2516,7 +2519,142 @@ func sortDecisionsByPriority(decisions []decision.Decision) []decision.Decision 
 	return sorted
 }
 
-// startDrawdownMonitor starts drawdown monitoring
+// startProfitGivebackMonitor 启动浮盈回撤保护监控（每 30 秒检查一次有持仓时才工作）。
+// 对启用了 profit_giveback_pct 的持仓：追踪浮盈峰值，浮盈从峰值回落超过阈值时程序自动平仓。
+func (at *AutoTrader) startProfitGivebackMonitor() {
+	if at.store == nil || at.id == "" {
+		return
+	}
+
+	at.monitorWg.Add(1)
+	go func() {
+		defer at.monitorWg.Done()
+
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		logger.Infof("🔻 [%s] 浮盈回撤保护监控已启动（每 30 秒检查，仅对 AI 设置了 profit_giveback_pct 的持仓生效）", at.name)
+
+		for {
+			select {
+			case <-at.stopMonitorCh:
+				return
+			case <-ticker.C:
+				at.checkProfitGiveback()
+			}
+		}
+	}()
+}
+
+// checkProfitGiveback 执行一轮浮盈回撤检查：更新峰值并判断是否触发保护平仓。
+func (at *AutoTrader) checkProfitGiveback() {
+	if at.trader == nil {
+		return
+	}
+
+	// 查询启用了浮盈回撤保护的 OPEN 持仓（无则直接返回，不调交易所 API）
+	protections, err := at.store.Position().GetProfitProtection(at.id)
+	if err != nil || len(protections) == 0 {
+		return
+	}
+
+	positions, err := at.trader.GetPositions()
+	if err != nil {
+		logger.Infof("⚠️ [%s] 浮盈回撤监控获取持仓失败: %v", at.name, err)
+		return
+	}
+
+	for _, pos := range positions {
+		symbol, _ := pos["symbol"].(string)
+		sideRaw, _ := pos["side"].(string)
+		if symbol == "" || sideRaw == "" {
+			continue
+		}
+		key := symbol + "_" + strings.ToUpper(sideRaw)
+		prot, ok := protections[key]
+		if !ok {
+			// 跨交易所 symbol 兼容：Hyperliquid 等返回 "ETH" 而数据库存 "ETHUSDT"
+			base := strings.TrimSuffix(symbol, "USDT")
+			prot, ok = protections[base+"_"+strings.ToUpper(sideRaw)]
+		}
+		if !ok {
+			continue
+		}
+		posID, givebackPct, oldPeak := int64(prot[0]), prot[1], prot[2]
+
+		// 交易所原始数据：unRealizedProfit / positionAmt / markPrice / leverage（camelCase）
+		pnl, _ := pos["unRealizedProfit"].(float64)
+		amount, _ := pos["positionAmt"].(float64)
+		if amount < 0 {
+			amount = -amount
+		}
+		markPrice, _ := pos["markPrice"].(float64)
+		leverage := 1.0
+		if lev, ok := pos["leverage"].(float64); ok && lev > 0 {
+			leverage = lev
+		}
+		marginUsed := (amount * markPrice) / leverage
+
+		// 更新浮盈峰值（SQL 侧仅在新值更大时写入，防并发回写）
+		peak := oldPeak
+		if pnl > oldPeak {
+			peak = pnl
+			if err := at.store.Position().UpdateProfitPeak(posID, pnl); err != nil {
+				logger.Infof("⚠️ [%s] 更新浮盈峰值失败 (%s %s): %v", at.name, symbol, sideRaw, err)
+			}
+		}
+
+		// 激活门槛：浮盈峰值需超过保证金的 5%，避免刚开仓的微小浮盈噪音触发
+		if marginUsed <= 0 || peak < marginUsed*0.05 {
+			continue
+		}
+
+		// 触发条件：当前浮盈 <= 峰值 × (1 - X%)
+		threshold := peak * (1 - givebackPct/100)
+		if pnl > threshold {
+			continue
+		}
+
+		logger.Infof("🔻 [%s] 浮盈回撤保护触发: %s %s 峰值浮盈=%.2f 当前浮盈=%.2f 阈值=%.2f (回撤阈值 %.0f%%)，程序自动平仓",
+			at.name, symbol, strings.ToUpper(sideRaw), peak, pnl, threshold, givebackPct)
+		at.executeGivebackClose(symbol, strings.ToUpper(sideRaw), peak, pnl)
+	}
+}
+
+// executeGivebackClose 执行浮盈回撤触发的保护平仓（市价全平，交易所侧条件单由平仓流程自动撤销）。
+func (at *AutoTrader) executeGivebackClose(symbol, side string, peakPnl, currentPnl float64) {
+	var order map[string]interface{}
+	var err error
+
+	if side == "LONG" {
+		order, err = at.trader.CloseLong(symbol, 0) // 0 = close all
+	} else {
+		order, err = at.trader.CloseShort(symbol, 0)
+	}
+
+	if err != nil {
+		logger.Infof("❌ [%s] 浮盈回撤保护平仓失败 (%s %s): %v", at.name, symbol, side, err)
+		return
+	}
+
+	orderID := int64(0)
+	if id, ok := order["orderId"].(int64); ok {
+		orderID = id
+	}
+	logger.Infof("✅ [%s] 浮盈回撤保护平仓完成: %s %s 峰值浮盈=%.2f 锁定浮盈=%.2f (orderID=%d)",
+		at.name, symbol, side, peakPnl, currentPnl, orderID)
+
+	// 重置该持仓的保护状态，避免 OrderSync 同步前重复触发
+	// （仓位归零后 GetPositions 不再返回该持仓，此处仅为快速兜底）
+	if protections, err := at.store.Position().GetProfitProtection(at.id); err == nil {
+		key := symbol + "_" + side
+		if prot, ok := protections[key]; ok {
+			posID := int64(prot[0])
+			_ = at.store.Position().UpdateProfitPeak(posID, 0)
+		}
+	}
+}
+
 func (at *AutoTrader) startDrawdownMonitor() {
 	// Get configuration from strategy
 	config := at.strategyEngine.GetConfig()
@@ -3313,15 +3451,24 @@ func getSideFromAction(action string) string {
 	}
 }
 
-// persistInitialSLTP 将 AI 决策的止盈止损异步写入持仓记录。
+// persistInitialSLTP 将 AI 决策的止盈止损与浮盈回撤保护异步写入持仓记录。
 // 持仓记录由 OrderSync 从交易所成交异步创建，因此这里轮询等待记录出现（最多 120 秒），
 // 找到后写入 initial_* 和 final_* 字段，供前端展示与后续调整追踪。
-func (at *AutoTrader) persistInitialSLTP(symbol, positionSide string, stopLoss, takeProfit float64) {
+func (at *AutoTrader) persistInitialSLTP(symbol, positionSide string, stopLoss, takeProfit, givebackPct float64) {
 	if at.store == nil || at.id == "" {
 		return
 	}
-	if stopLoss <= 0 && takeProfit <= 0 {
+	if stopLoss <= 0 && takeProfit <= 0 && givebackPct <= 0 {
 		return
+	}
+	// 钳制到合法范围：0（禁用）~ 90%
+	if givebackPct < 0 {
+		givebackPct = 0
+	} else if givebackPct > 90 {
+		givebackPct = 90
+	}
+	if givebackPct <= 0 {
+		givebackPct = 0 // 不启用
 	}
 
 	go func() {
@@ -3347,6 +3494,16 @@ func (at *AutoTrader) persistInitialSLTP(symbol, positionSide string, stopLoss, 
 			}
 			logger.Infof("  📝 [%s] Persisted SL/TP to position record: %s %s SL=%.4f TP=%.4f",
 				at.name, symbol, positionSide, stopLoss, takeProfit)
+
+			// 浮盈回撤保护：记录 AI 设定的阈值，监控循环据此激活
+			if givebackPct > 0 {
+				if err := at.store.Position().SetProfitGiveback(openPos.ID, givebackPct); err != nil {
+					logger.Infof("  ⚠️ [%s] Failed to persist profit giveback for %s %s: %v", at.name, symbol, positionSide, err)
+				} else {
+					logger.Infof("  📝 [%s] Profit giveback protection enabled: %s %s giveback=%.0f%%",
+						at.name, symbol, positionSide, givebackPct)
+				}
+			}
 			return
 		}
 		logger.Infof("  ⚠️ [%s] Position record for %s %s not found after 120s, SL/TP not persisted", at.name, symbol, positionSide)

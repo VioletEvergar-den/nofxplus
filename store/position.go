@@ -54,6 +54,8 @@ type TraderPosition struct {
 	FinalTakeProfit    float64    `json:"final_take_profit"`    // Final/adjusted take profit level (if modified)
 	AdjustmentCount    int        `json:"adjustment_count"`     // Number of SL/TP adjustments made
 	LastAdjustmentTime *time.Time `json:"last_adjustment_time"` // Timestamp of last adjustment
+	ProfitGivebackPct  float64    `json:"profit_giveback_pct"`  // 浮盈回撤平仓阈值百分比（0=不启用，AI 开仓时设定）
+	ProfitPeak         float64    `json:"profit_peak"`          // 浮盈峰值 USDT（程序监控循环维护）
 	ExchangeSynced     bool       `json:"exchange_synced"`      // Whether position data was synced with exchange
 	LastSyncTime       *time.Time `json:"last_sync_time"`       // Last time synced with exchange
 	CreatedAt          time.Time  `json:"created_at"`
@@ -131,6 +133,13 @@ func (s *PositionStore) InitTables() error {
 	}
 	if _, err := s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN adjustment_count INTEGER DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("failed to add adjustment_count column: %w", err)
+	}
+	// Migration: profit giveback protection (AI-specified trailing profit threshold + program-tracked peak)
+	if _, err := s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN profit_giveback_pct REAL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("failed to add profit_giveback_pct column: %w", err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN profit_peak REAL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("failed to add profit_peak column: %w", err)
 	}
 	if _, err := s.db.Exec(`ALTER TABLE trader_positions ADD COLUMN last_adjustment_time DATETIME`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("failed to add last_adjustment_time column: %w", err)
@@ -1532,6 +1541,76 @@ func (s *PositionStore) GetOpenPositionSLTP(traderID string) (map[string][2]floa
 			continue
 		}
 		result[symbol+"_"+side] = [2]float64{sl, tp}
+	}
+	return result, rows.Err()
+}
+
+// SetProfitGiveback 开仓时记录 AI 设定的浮盈回撤阈值（仅对 OPEN 持仓且未设置时生效）。
+func (s *PositionStore) SetProfitGiveback(id int64, givebackPct float64) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid position id: %d", id)
+	}
+
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE trader_positions SET
+			profit_giveback_pct = ?,
+			profit_peak = 0,
+			updated_at = ?
+		WHERE id = ? AND status = 'OPEN'
+	`, givebackPct, now.Format(time.RFC3339), id)
+
+	if err != nil {
+		return fmt.Errorf("failed to set profit giveback: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateProfitPeak 监控循环更新持仓的浮盈峰值（仅当新峰值更大时生效，避免并发回写旧值）。
+func (s *PositionStore) UpdateProfitPeak(id int64, peak float64) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid position id: %d", id)
+	}
+
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE trader_positions SET
+			profit_peak = ?,
+			updated_at = ?
+		WHERE id = ? AND status = 'OPEN' AND profit_peak < ?
+	`, peak, now.Format(time.RFC3339), id, peak)
+
+	if err != nil {
+		return fmt.Errorf("failed to update profit peak: %w", err)
+	}
+
+	return nil
+}
+
+// GetProfitProtection 获取交易员所有启用了浮盈回撤保护的 OPEN 持仓。
+// 返回 map：key 为 "SYMBOL_SIDE"，value 为 {持仓ID, 回撤百分比, 当前峰值}。
+func (s *PositionStore) GetProfitProtection(traderID string) (map[string][3]float64, error) {
+	rows, err := s.db.Query(`
+		SELECT symbol, side, id,
+		       COALESCE(profit_giveback_pct, 0),
+		       COALESCE(profit_peak, 0)
+		FROM trader_positions
+		WHERE trader_id = ? AND status = 'OPEN' AND COALESCE(profit_giveback_pct, 0) > 0
+	`, traderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query profit protection positions: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][3]float64)
+	for rows.Next() {
+		var symbol, side string
+		var id, pct, peak float64
+		if err := rows.Scan(&symbol, &side, &id, &pct, &peak); err != nil {
+			continue
+		}
+		result[symbol+"_"+side] = [3]float64{id, pct, peak}
 	}
 	return result, rows.Err()
 }

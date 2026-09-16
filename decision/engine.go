@@ -197,10 +197,11 @@ type Decision struct {
 	Action string `json:"action"` // "open_long", "open_short", "close_long", "close_short", "hold", "wait"
 
 	// Opening position parameters
-	Leverage        int     `json:"leverage,omitempty"`
-	PositionSizeUSD float64 `json:"position_size_usd,omitempty"`
-	StopLoss        float64 `json:"stop_loss,omitempty"`
-	TakeProfit      float64 `json:"take_profit,omitempty"`
+	Leverage          int     `json:"leverage,omitempty"`
+	PositionSizeUSD   float64 `json:"position_size_usd,omitempty"`
+	StopLoss          float64 `json:"stop_loss,omitempty"`
+	TakeProfit        float64 `json:"take_profit,omitempty"`
+	ProfitGivebackPct float64 `json:"profit_giveback_pct,omitempty"` // 浮盈回撤平仓：浮盈从峰值回落该百分比时程序自动平仓（0=不启用）
 
 	// Common parameters
 	Confidence int     `json:"confidence,omitempty"` // Confidence level (0-100)
@@ -1049,7 +1050,7 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 	sb.WriteString("```json\n[\n")
 	// Use the actual configured position value ratio for BTC/ETH in the example
 	examplePositionSize := accountEquity * btcEthPosValueRatio
-	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"confidence\": 85, \"risk_usd\": 300},\n",
+	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"profit_giveback_pct\": 30, \"confidence\": 85, \"risk_usd\": 300},\n",
 		riskControl.BTCETHMaxLeverage, examplePositionSize))
 	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\"}\n")
 	sb.WriteString("]\n```\n")
@@ -1058,6 +1059,7 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | hold | wait\n")
 	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
 	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
+	sb.WriteString("- Optional when opening: `profit_giveback_pct` (0-90, default 0 = disabled). Trailing profit protection: once unrealized profit reaches a peak, the position is automatically closed when profit falls back by this percentage from the peak. Choose based on volatility and leverage: high volatility or high leverage → smaller value (15-30); low volatility → larger value (40-60). Omit or use 0 to disable.\n")
 	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
 
 	return sb.String()
