@@ -11,6 +11,10 @@ export interface SystemStatus {
   stop_until: string
   last_reset_time: string
   ai_provider: string
+  prompt_optimization_active: boolean
+  feedback_analysis_active: boolean
+  trade_failure_analysis_active: boolean
+  compliance_tracking_active: boolean
 }
 
 export interface AccountInfo {

@@ -199,6 +199,11 @@ func (fg *FeedbackGenerator) DisableFeedback() {
 	fg.config.EnableFeedback = false
 }
 
+// IsEnabled returns whether feedback analysis is enabled
+func (fg *FeedbackGenerator) IsEnabled() bool {
+	return fg.config.EnableFeedback
+}
+
 // FeedbackGenerator generates feedback from historical performance
 type FeedbackGenerator struct {
 	runID  string

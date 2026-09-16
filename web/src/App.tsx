@@ -23,7 +23,7 @@ import { PositionHistory } from './components/PositionHistory'
 import { PunkAvatar, getTraderAvatar } from './components/PunkAvatar'
 import { OFFICIAL_LINKS } from './constants/branding'
 import { BacktestPage } from './components/BacktestPage'
-import { LogOut, Loader2, Eye, EyeOff, Copy, Check } from 'lucide-react'
+import { LogOut, Loader2, Eye, EyeOff, Copy, Check, HelpCircle, BarChart3 } from 'lucide-react'
 import type {
   SystemStatus,
   AccountInfo,
@@ -817,6 +817,7 @@ function TraderDetailsPage({
   const chartSectionRef = useRef<HTMLDivElement>(null)
   const [showWalletAddress, setShowWalletAddress] = useState<boolean>(false)
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false)
+  const [showAnalysisHelp, setShowAnalysisHelp] = useState<boolean>(false)
 
   // Current positions pagination
   const [positionsPageSize, setPositionsPageSize] = useState<number>(20)
@@ -1242,58 +1243,176 @@ function TraderDetailsPage({
       {/* Analysis Systems Status */}
       {status && (
         <div
-          className="mb-6 p-4 rounded-lg"
+          className="mb-6 p-5 rounded-xl"
           style={{
             background: 'rgba(240, 185, 11, 0.05)',
             border: '1px solid rgba(240, 185, 11, 0.2)',
           }}
         >
-          <h3
-            className="text-sm font-semibold mb-3"
-            style={{ color: '#EAECEF' }}
-          >
-            {language === 'zh' ? '📊 分析系统状态' : '📊 Analysis Systems Status'}
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* 标题栏 */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#F0B90B] to-[#E1A706] flex items-center justify-center text-black shrink-0">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold" style={{ color: '#EAECEF' }}>
+                  {language === 'zh' ? '分析系统状态' : 'Analysis Systems Status'}
+                </h3>
+                <p className="text-xs mt-0.5" style={{ color: '#848E9C' }}>
+                  {language === 'zh'
+                    ? 'AI 自我进化与风控子系统的运行情况'
+                    : 'Runtime status of AI self-evolution & risk-control subsystems'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAnalysisHelp(!showAnalysisHelp)}
+              className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors hover:bg-[#2B3139]"
+              style={{ color: showAnalysisHelp ? '#F0B90B' : '#848E9C' }}
+              title={language === 'zh' ? '使用说明' : 'Help'}
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* 使用说明（点击 ❓ 展开） */}
+          {showAnalysisHelp && (
+            <div
+              className="mb-4 p-4 rounded-xl text-xs leading-relaxed"
+              style={{
+                background: 'rgba(240, 185, 11, 0.06)',
+                border: '1px solid rgba(240, 185, 11, 0.45)',
+                color: '#EAECEF',
+              }}
+            >
+              <p className="font-semibold mb-2" style={{ color: '#F0B90B' }}>
+                {language === 'zh' ? '📌 使用说明' : '📌 About'}
+              </p>
+              <p className="mb-3" style={{ color: '#848E9C' }}>
+                {language === 'zh'
+                  ? '这四个子系统构成交易员的自我进化闭环：交易 → 复盘 → 更新提示词/风控参数 → 下一次决策更优。前两项可在创建/编辑交易员时开关；后两项始终运行。'
+                  : 'These four subsystems form a self-evolution loop: trade → review → update prompts/risk parameters → better next decisions. The first two can be toggled in trader settings; the last two always run.'}
+              </p>
+              <ul className="space-y-2">
+                <li>
+                  <span style={{ color: '#F0B90B' }}>提示词进化 / Prompt Evolution：</span>
+                  <span style={{ color: '#848E9C' }}>
+                    {language === 'zh'
+                      ? 'AI 根据近期交易表现生成提示词变体进行 A/B 测试（每 5 笔交易评估一轮），表现最优的变体用于后续决策。可在交易员配置中开启/关闭。'
+                      : 'AI generates prompt variants from recent performance and A/B tests them (evaluated every 5 trades); the best-performing variant is used for future decisions. Toggle in trader settings.'}
+                  </span>
+                </li>
+                <li>
+                  <span style={{ color: '#F0B90B' }}>反馈分析 / Feedback Analysis：</span>
+                  <span style={{ color: '#848E9C' }}>
+                    {language === 'zh'
+                      ? '每 20 个交易周期对历史交易生成 AI 复盘分析，改进结论会注入后续决策提示词；需累计 10 笔以上平仓交易才会首次生成。可在交易员配置中开启/关闭。'
+                      : 'Generates an AI review of historical trades every 20 cycles and injects conclusions into future decisions; requires 10+ closed trades for the first run. Toggle in trader settings.'}
+                  </span>
+                </li>
+                <li>
+                  <span style={{ color: '#F0B90B' }}>失败分析 / Failure Analysis：</span>
+                  <span style={{ color: '#848E9C' }}>
+                    {language === 'zh'
+                      ? '自动分析亏损交易与失败模式，动态校准风控参数与失败判定阈值，随交易历史持续学习。始终运行。'
+                      : 'Analyzes losing trades and failure patterns, dynamically calibrates risk parameters and failure thresholds. Always running.'}
+                  </span>
+                </li>
+                <li>
+                  <span style={{ color: '#F0B90B' }}>合规追踪 / Compliance Tracking：</span>
+                  <span style={{ color: '#848E9C' }}>
+                    {language === 'zh'
+                      ? '记录 AI 决策对风控约束与系统建议的遵守情况，违规行为会作为反馈注入决策，帮助 AI 自我纠正。始终运行。'
+                      : 'Records how AI decisions comply with risk constraints and system advice; violations are fed back into decisions for self-correction. Always running.'}
+                  </span>
+                </li>
+              </ul>
+            </div>
+          )}
+
+          {/* 系统卡片 */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               {
                 key: 'prompt_optimization_active',
-                label: language === 'zh' ? 'Prompt优化' : 'Prompt Optimization',
+                label: language === 'zh' ? '提示词进化' : 'Prompt Evolution',
+                desc:
+                  language === 'zh'
+                    ? '基于交易表现自动演化提示词并择优'
+                    : 'Evolves prompts from performance and picks the best',
               },
               {
                 key: 'feedback_analysis_active',
                 label: language === 'zh' ? '反馈分析' : 'Feedback Analysis',
+                desc:
+                  language === 'zh'
+                    ? '定期生成 AI 复盘并注入决策提示词'
+                    : 'Periodic AI review injected into decisions',
               },
               {
                 key: 'trade_failure_analysis_active',
-                label: language === 'zh' ? '失败分析' : 'Trade Failure Analysis',
+                label: language === 'zh' ? '失败分析' : 'Failure Analysis',
+                desc:
+                  language === 'zh'
+                    ? '分析亏损交易，自动校准风控参数'
+                    : 'Analyzes losses and calibrates risk parameters',
               },
               {
                 key: 'compliance_tracking_active',
                 label: language === 'zh' ? '合规追踪' : 'Compliance Tracking',
+                desc:
+                  language === 'zh'
+                    ? '记录 AI 决策对风控约束的遵守情况'
+                    : 'Tracks AI compliance with risk rules',
               },
-            ].map((system) => (
-              <div
-                key={system.key}
-                className="flex items-center gap-2 px-3 py-2 rounded"
-                style={{
-                  background: '#1E2329',
-                  border: '1px solid #2B3139',
-                }}
-              >
+            ].map((system) => {
+              const active = Boolean(status[system.key as keyof typeof status])
+              return (
                 <div
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    background: status[system.key as keyof typeof status]
-                      ? '#0ECB81'
-                      : '#F6465D',
-                  }}
-                ></div>
-                <span className="text-xs" style={{ color: '#EAECEF' }}>
-                  {system.label}
-                </span>
-              </div>
-            ))}
+                  key={system.key}
+                  className="p-3 rounded-xl"
+                  style={{ background: '#1E2329', border: '1px solid #2B3139' }}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span
+                      className="text-sm font-medium truncate"
+                      style={{ color: '#EAECEF' }}
+                    >
+                      {system.label}
+                    </span>
+                    <div
+                      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0"
+                      style={{
+                        background: active
+                          ? 'rgba(14, 203, 129, 0.12)'
+                          : 'rgba(132, 142, 156, 0.12)',
+                      }}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ background: active ? '#0ECB81' : '#848E9C' }}
+                      ></span>
+                      <span
+                        className="text-[10px] whitespace-nowrap"
+                        style={{ color: active ? '#0ECB81' : '#848E9C' }}
+                      >
+                        {language === 'zh'
+                          ? active
+                            ? '运行中'
+                            : '未启用'
+                          : active
+                            ? 'Active'
+                            : 'Off'}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs leading-relaxed" style={{ color: '#848E9C' }}>
+                    {system.desc}
+                  </p>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

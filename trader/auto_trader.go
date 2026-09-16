@@ -2228,8 +2228,8 @@ func (at *AutoTrader) GetStatus() map[string]interface{} {
 		"ai_provider":                   aiProvider,
 		"order_sync_disabled":           orderSyncDisabled,
 		"order_sync_failures":           orderSyncFailures,
-		"prompt_optimization_active":    at.promptOptimizer != nil,
-		"feedback_analysis_active":      at.feedbackGenerator != nil,
+		"prompt_optimization_active":    at.promptOptimizer != nil && at.promptOptimizer.Config.EnableOptimization,
+		"feedback_analysis_active":      at.feedbackGenerator != nil && at.feedbackGenerator.IsEnabled(),
 		"trade_failure_analysis_active": at.factorOptimizer != nil,
 		"compliance_tracking_active":    at.complianceTracker != nil,
 	}
