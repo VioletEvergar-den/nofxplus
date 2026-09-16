@@ -578,6 +578,25 @@ export function StrategyStudioPage() {
         {/* Left Column - Strategy List */}
         <div className="w-48 flex-shrink-0 border-r overflow-y-auto" style={{ borderColor: '#2B3139' }}>
           <div className="p-2">
+            {/* AI 专家团 CTA（显眼独立入口） */}
+            <button
+              onClick={() => setShowCouncilModal(true)}
+              className="w-full mb-2 px-3 py-3 rounded-xl text-left transition-all hover:scale-[1.02] group"
+              style={{
+                background: 'linear-gradient(135deg, rgba(240,185,11,0.16) 0%, rgba(240,185,11,0.05) 100%)',
+                border: '1px solid rgba(240,185,11,0.45)',
+                boxShadow: '0 4px 16px rgba(240,185,11,0.12)',
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #F0B90B 0%, #FCD535 100%)' }}>
+                  <Sparkles className="w-4 h-4 text-black" />
+                </div>
+                <span className="text-[12px] font-bold" style={{ color: '#F0B90B' }}>{t('aiCouncil.ctaTitle')}</span>
+              </div>
+              <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: '#848E9C' }}>{t('aiCouncil.ctaDesc')}</p>
+            </button>
+
             <div className="flex items-center justify-between mb-2 px-2">
               <span className="text-xs font-medium" style={{ color: '#848E9C' }}>{t('strategies')}</span>
               <div className="flex items-center gap-1">
@@ -691,11 +710,15 @@ export function StrategyStudioPage() {
                   <button
                     onClick={() => setShowCouncilModal(true)}
                     disabled={!editingConfig && !selectedStrategy}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                    style={{ background: 'rgba(240, 185, 11, 0.1)', border: '1px solid rgba(240, 185, 11, 0.35)', color: '#F0B90B' }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{
+                      background: 'linear-gradient(135deg, #F0B90B 0%, #FCD535 100%)',
+                      color: '#0B0E11',
+                      boxShadow: '0 2px 10px rgba(240,185,11,0.3)',
+                    }}
                   >
-                    <Sparkles className="w-3 h-3" />
-                    {t('aiCouncil.title')}
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {t('aiCouncil.ctaTitle')}
                   </button>
                   {!selectedStrategy.is_default && (
                     <button

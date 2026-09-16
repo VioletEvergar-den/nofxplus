@@ -155,12 +155,12 @@ payload 字段：
 }
 
 // addTranscript 追加圆桌发言记录（并发安全）
-func (st *councilState) addTranscript(role, emoji, name, kind, content string) {
+func (st *councilState) addTranscript(role, emoji, name, kind, content string, payload any) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.Transcript = append(st.Transcript, councilTranscriptEntry{
 		Role: role, Emoji: emoji, Name: name, Kind: kind,
-		Content: content, CreatedAt: time.Now(),
+		Content: content, Payload: payload, CreatedAt: time.Now(),
 	})
 }
 
@@ -194,7 +194,13 @@ func buildTranscriptText(st *councilState) string {
 	for _, e := range st.Transcript {
 		switch e.Kind {
 		case "speech":
-			fmt.Fprintf(&sb, "【%s %s 发言】\n%s\n\n", e.Emoji, e.Name, e.Content)
+			fmt.Fprintf(&sb, "【%s %s 发言】\n%s\n", e.Emoji, e.Name, e.Content)
+			if e.Payload != nil {
+				if pj, err := json.Marshal(e.Payload); err == nil {
+					fmt.Fprintf(&sb, "payload: %s\n", truncateRunes(string(pj), 1800))
+				}
+			}
+			sb.WriteString("\n")
 		case "tool_call":
 			fmt.Fprintf(&sb, "【%s %s 调用工具】%s\n", e.Emoji, e.Name, e.Content)
 		case "tool_result":
@@ -202,7 +208,13 @@ func buildTranscriptText(st *councilState) string {
 		case "question":
 			fmt.Fprintf(&sb, "%s\n", e.Content)
 		case "answer":
-			fmt.Fprintf(&sb, "【%s %s 回应】\n%s\n\n", e.Emoji, e.Name, e.Content)
+			fmt.Fprintf(&sb, "【%s %s 回应】\n%s\n", e.Emoji, e.Name, e.Content)
+			if e.Payload != nil {
+				if pj, err := json.Marshal(e.Payload); err == nil {
+					fmt.Fprintf(&sb, "payload: %s\n", truncateRunes(string(pj), 1200))
+				}
+			}
+			sb.WriteString("\n")
 		default:
 			fmt.Fprintf(&sb, "【%s %s】%s\n\n", e.Emoji, e.Name, e.Content)
 		}
@@ -378,10 +390,10 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 				} else if toolName == "search_news" {
 					desc = fmt.Sprintf("search_news %v", c["query"])
 				}
-				st.addTranscript(role.ID, role.Emoji, roleDisplayName(role.ID, st.Language), "tool_call", desc)
+				st.addTranscript(role.ID, role.Emoji, roleDisplayName(role.ID, st.Language), "tool_call", desc, nil)
 				st.addActivity(role.ID, "🔧 "+desc)
 				result := s.execCouncilTool(c, st.Language)
-				st.addTranscript("system", "📊", "System", "tool_result", truncateRunes(result, 3000))
+				st.addTranscript("system", "📊", "System", "tool_result", truncateRunes(result, 3000), nil)
 			}
 			toolUses += len(calls)
 			continue
@@ -405,22 +417,37 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 				if tRole.ID != "" && tRole.ID != roleID {
 					askUsed = true
 					st.addTranscript(roleID, role.Emoji, roleDisplayName(roleID, st.Language), "question",
-						fmt.Sprintf("【⚖️ 风控评审官 → %s %s 追问】%s", tRole.Emoji, roleDisplayName(tRole.ID, st.Language), ask.Question))
+						fmt.Sprintf("【⚖️ 风控评审官 → %s %s 追问】%s", tRole.Emoji, roleDisplayName(tRole.ID, st.Language), ask.Question), nil)
 					st.addActivity(roleID, "❓ 追问 "+roleDisplayName(tRole.ID, st.Language)+": "+truncateRunes(ask.Question, 60))
-					// 被点名角色作答一轮（一次性，信封格式）
+					// 被点名角色作答一轮（一次性，信封格式；作答允许 payload 为 {}，summary 为主）
 					if remainingBudget(st) > 0 {
 						atomic.AddInt32(&st.UsedBudget, 1)
-						ansPrompt := fmt.Sprintf("## 用户意图\n%s\n\n## 圆桌发言记录\n%s\n## 追问\n风控评审官向你提问：%s\n\n请直接作答（输出信封 JSON，summary 为你的圆桌回应内容）。", st.Intent, buildTranscriptText(st), ask.Question)
+						ansPrompt := fmt.Sprintf("## 用户意图\n%s\n\n## 圆桌发言记录\n%s\n## 追问\n风控评审官向你提问：%s\n\n请直接作答：输出信封 JSON，summary 为你的圆桌回应内容，payload 填空对象 {} 即可。", st.Intent, buildTranscriptText(st), ask.Question)
 						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language), ansPrompt)
 						if err2 == nil {
-							if env2, errP := parseEnvelope(resp2); errP == nil {
-								content := env2.Summary
-								if len(env2.Concerns) > 0 {
-									content += "\n（疑虑: " + strings.Join(env2.Concerns, "；") + "）"
+							env2, errP := parseEnvelope(resp2)
+							if errP != nil {
+								// 宽容兜底：作答只关心 summary 内容，不因格式问题丢弃回答
+								if block, ok := extractJSONBlock(resp2); ok {
+									var raw map[string]any
+									if json.Unmarshal([]byte(block), &raw) == nil {
+										if sm, okS := raw["summary"].(string); okS && strings.TrimSpace(sm) != "" {
+											env2 = &councilEnvelope{Summary: sm}
+											errP = nil
+										}
+									}
 								}
-								st.addTranscript(tRole.ID, tRole.Emoji, roleDisplayName(tRole.ID, st.Language), "answer", content)
-								st.addActivity(tRole.ID, "💬 回应追问")
+								if errP != nil {
+									env2 = &councilEnvelope{Summary: truncateRunes(strings.TrimSpace(resp2), 600)}
+									errP = nil
+								}
 							}
+							content := env2.Summary
+							if len(env2.Concerns) > 0 {
+								content += "\n（疑虑: " + strings.Join(env2.Concerns, "；") + "）"
+							}
+							st.addTranscript(tRole.ID, tRole.Emoji, roleDisplayName(tRole.ID, st.Language), "answer", content, env2.Payload)
+							st.addActivity(tRole.ID, "💬 回应追问")
 						} else {
 							logger.Warnf("[Council] answer from %s failed: %v", target, err2)
 						}
@@ -433,11 +460,11 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		// 3) 信封解析
 		env, errP := parseEnvelope(resp)
 		if errP != nil {
-			// 格式错误：给一次重试机会
-			if turn < 8 {
-				st.addTranscript("system", "⚠️", "System", "system", "输出格式错误（"+errP.Error()+"），请立即重新输出信封 JSON。")
-				continue
-			}
+				// 格式错误：给一次重试机会
+				if turn < 8 {
+					st.addTranscript("system", "⚠️", "System", "system", "输出格式错误（"+errP.Error()+"），请立即重新输出信封 JSON。", nil)
+					continue
+				}
 			st.mu.Lock()
 			step.Status = string(councilStepFailed)
 			step.Error = errP.Error()
@@ -450,10 +477,7 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		if len(env.Concerns) > 0 {
 			content += "\n（疑虑: " + strings.Join(env.Concerns, "；") + "）"
 		}
-		if pj, errJ := json.Marshal(env.Payload); errJ == nil {
-			content += "\npayload: " + truncateRunes(string(pj), 1800)
-		}
-		st.addTranscript(roleID, role.Emoji, roleDisplayName(roleID, st.Language), "speech", content)
+		st.addTranscript(roleID, role.Emoji, roleDisplayName(roleID, st.Language), "speech", content, env.Payload)
 		st.addActivity(role.ID, "✅ 已给出结论")
 		st.mu.Lock()
 		step.Status = string(councilStepDone)
@@ -485,7 +509,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	repairRounds := 0
 
 	// 圆桌开场
-	st.addTranscript("system", "🏛️", "System", "system", "策略意图: "+st.Intent)
+	st.addTranscript("system", "🏛️", "System", "system", "策略意图: "+st.Intent, nil)
 
 	// ---------- 第 1 轮：情报分析师 ----------
 	if _, err := s.runAgentTurn(st, modelID, "intel_analyst", "请给出市场状态与币种画像（先用工具查证再下结论）。"); err != nil {

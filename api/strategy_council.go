@@ -58,6 +58,7 @@ type councilTranscriptEntry struct {
 	Name      string    `json:"name"`
 	Kind      string    `json:"kind"` // speech|tool_call|tool_result|question|answer|system
 	Content   string    `json:"content"`
+	Payload   any       `json:"payload,omitempty"` // speech/answer 附带的结构化产出（前端折叠展示）
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -185,7 +186,23 @@ func parseEnvelope(resp string) (*councilEnvelope, error) {
 		return nil, fmt.Errorf("JSON 解析失败: %w", err)
 	}
 	if env.Payload == nil {
-		return nil, fmt.Errorf("信封缺少 payload 字段")
+		// 兼容修复：AI 可能漏写 payload 包装，把结构化内容直接放在信封顶层——自动抢救
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(block), &raw); err == nil {
+			extra := make(map[string]any)
+			for k, v := range raw {
+				if k == "summary" || k == "concerns" || k == "confidence" {
+					continue
+				}
+				extra[k] = v
+			}
+			if len(extra) > 0 {
+				env.Payload = extra
+			}
+		}
+	}
+	if env.Payload == nil {
+		return nil, fmt.Errorf("信封缺少 payload 字段（须包含本角色的结构化产出）")
 	}
 	return &env, nil
 }
