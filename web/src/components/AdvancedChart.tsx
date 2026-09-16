@@ -18,7 +18,7 @@ import {
   calculateBollingerBands,
   type Kline,
 } from '../utils/indicators'
-import { Settings, BarChart2 } from 'lucide-react'
+import { Settings, BarChart2, Loader2 } from 'lucide-react'
 
 // 订单接口定义
 interface OrderMarker {
@@ -67,6 +67,14 @@ const formatVolume = (value: number): string => {
   if (value >= 1e6) return (value / 1e6).toFixed(2) + 'M'
   if (value >= 1e3) return (value / 1e3).toFixed(2) + 'K'
   return value.toFixed(2)
+}
+
+// 智能价格小数位：>=100 显示 2 位，1~100 显示 4 位，<1 显示 6 位
+const formatPrice = (price: number | undefined): string => {
+  if (price === undefined || !isFinite(price)) return '—'
+  if (price >= 100) return price.toFixed(2)
+  if (price >= 1) return price.toFixed(4)
+  return price.toFixed(6)
 }
 
 export function AdvancedChart({
@@ -786,10 +794,7 @@ export function AdvancedChart({
                 className="text-base font-bold tabular-nums"
                 style={{ color: marketStats.priceChange >= 0 ? '#10B981' : '#EF4444' }}
               >
-                {marketStats.price.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2
-                })}
+                {formatPrice(marketStats.price)}
               </span>
               <span
                 className="text-xs font-medium px-1.5 py-0.5 rounded tabular-nums"
@@ -803,8 +808,8 @@ export function AdvancedChart({
 
               {/* Compact H/L */}
               <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                <span>H <span className="text-gray-300">{marketStats.high.toFixed(2)}</span></span>
-                <span>L <span className="text-gray-300">{marketStats.low.toFixed(2)}</span></span>
+                <span>H <span className="text-gray-300">{formatPrice(marketStats.high)}</span></span>
+                <span>L <span className="text-gray-300">{formatPrice(marketStats.low)}</span></span>
                 {marketStats.volume > 0 && baseUnit && (
                   <span>Vol <span className="text-gray-300">{formatVolume(marketStats.volume)}</span></span>
                 )}
@@ -920,70 +925,98 @@ export function AdvancedChart({
       <div style={{ position: 'relative' }}>
         <div ref={chartContainerRef} />
 
-        {/* OHLC Tooltip */}
-        {tooltipData && (
-          <div
-            ref={tooltipRef}
-            style={{
-              position: 'absolute',
-              left: '10px',
-              top: '10px',
-              padding: '8px 12px',
-              background: 'rgba(15, 18, 21, 0.95)',
-              border: '1px solid rgba(240, 185, 11, 0.3)',
-              borderRadius: '6px',
-              color: '#EAECEF',
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              pointerEvents: 'none',
-              zIndex: 10,
-              backdropFilter: 'blur(10px)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
-            }}
-          >
-            <div style={{ marginBottom: '6px', color: '#F0B90B', fontWeight: 'bold', fontSize: '11px' }}>
-              {new Date((tooltipData.time as number) * 1000).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+        {/* OHLC Tooltip（跟随十字光标，靠近右缘时自动翻转） */}
+        {tooltipData && (() => {
+          const containerWidth = chartContainerRef.current?.clientWidth || 0
+          const flipX = tooltipData.x > containerWidth * 0.55
+          const candleChange =
+            tooltipData.open && tooltipData.open !== 0
+              ? ((tooltipData.close - tooltipData.open) / tooltipData.open) * 100
+              : 0
+          const up = candleChange >= 0
+          return (
+            <div
+              ref={tooltipRef}
+              style={{
+                position: 'absolute',
+                left: flipX ? undefined : Math.min(tooltipData.x + 16, Math.max(containerWidth - 180, 8)),
+                right: flipX ? Math.max(containerWidth - tooltipData.x + 16, 8) : undefined,
+                top: Math.max(8, tooltipData.y - 24),
+                padding: '8px 12px',
+                background: 'rgba(15, 18, 21, 0.95)',
+                border: '1px solid rgba(240, 185, 11, 0.3)',
+                borderRadius: '8px',
+                color: '#EAECEF',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                pointerEvents: 'none',
+                zIndex: 10,
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+              }}
+            >
+              <div style={{ marginBottom: '6px', color: '#F0B90B', fontWeight: 'bold', fontSize: '11px' }}>
+                {new Date((tooltipData.time as number) * 1000).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: '11px' }}>
+                <span style={{ color: '#848E9C' }}>O:</span>
+                <span style={{ color: '#EAECEF', fontWeight: '500' }}>{formatPrice(tooltipData.open)}</span>
+
+                <span style={{ color: '#848E9C' }}>H:</span>
+                <span style={{ color: '#0ECB81', fontWeight: '500' }}>{formatPrice(tooltipData.high)}</span>
+
+                <span style={{ color: '#848E9C' }}>L:</span>
+                <span style={{ color: '#F6465D', fontWeight: '500' }}>{formatPrice(tooltipData.low)}</span>
+
+                <span style={{ color: '#848E9C' }}>C:</span>
+                <span style={{
+                  color: tooltipData.close >= tooltipData.open ? '#0ECB81' : '#F6465D',
+                  fontWeight: 'bold'
+                }}>
+                  {formatPrice(tooltipData.close)}
+                </span>
+
+                <span style={{ color: '#848E9C' }}>{language === 'zh' ? '涨跌' : 'Chg'}:</span>
+                <span style={{ color: up ? '#0ECB81' : '#F6465D', fontWeight: 'bold' }}>
+                  {up ? '+' : ''}{candleChange.toFixed(2)}%
+                </span>
+
+                {tooltipData.volume > 0 && baseUnit && (
+                  <>
+                    <span style={{ color: '#848E9C' }}>V({baseUnit}):</span>
+                    <span style={{ color: '#3B82F6', fontWeight: '500' }}>
+                      {formatVolume(tooltipData.volume)}
+                    </span>
+                  </>
+                )}
+
+                {tooltipData.quoteVolume > 0 && quoteUnit && (
+                  <>
+                    <span style={{ color: '#848E9C' }}>V({quoteUnit}):</span>
+                    <span style={{ color: '#3B82F6', fontWeight: '500' }}>
+                      {formatVolume(tooltipData.quoteVolume)}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: '11px' }}>
-              <span style={{ color: '#848E9C' }}>O:</span>
-              <span style={{ color: '#EAECEF', fontWeight: '500' }}>{tooltipData.open?.toFixed(2)}</span>
+          )
+        })()}
 
-              <span style={{ color: '#848E9C' }}>H:</span>
-              <span style={{ color: '#0ECB81', fontWeight: '500' }}>{tooltipData.high?.toFixed(2)}</span>
-
-              <span style={{ color: '#848E9C' }}>L:</span>
-              <span style={{ color: '#F6465D', fontWeight: '500' }}>{tooltipData.low?.toFixed(2)}</span>
-
-              <span style={{ color: '#848E9C' }}>C:</span>
-              <span style={{
-                color: tooltipData.close >= tooltipData.open ? '#0ECB81' : '#F6465D',
-                fontWeight: 'bold'
-              }}>
-                {tooltipData.close?.toFixed(2)}
-              </span>
-
-              {tooltipData.volume > 0 && baseUnit && (
-                <>
-                  <span style={{ color: '#848E9C' }}>V({baseUnit}):</span>
-                  <span style={{ color: '#3B82F6', fontWeight: '500' }}>
-                    {formatVolume(tooltipData.volume)}
-                  </span>
-                </>
-              )}
-
-              {tooltipData.quoteVolume > 0 && quoteUnit && (
-                <>
-                  <span style={{ color: '#848E9C' }}>V({quoteUnit}):</span>
-                  <span style={{ color: '#3B82F6', fontWeight: '500' }}>
-                    {formatVolume(tooltipData.quoteVolume)}
-                  </span>
-                </>
-              )}
+        {/* 初始加载遮罩 */}
+        {loading && !marketStats && !error && (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ background: 'rgba(11, 14, 17, 0.55)', zIndex: 5 }}
+          >
+            <div className="flex items-center gap-2 text-xs" style={{ color: '#F0B90B' }}>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {language === 'zh' ? '加载行情数据...' : 'Loading market data...'}
             </div>
           </div>
         )}
