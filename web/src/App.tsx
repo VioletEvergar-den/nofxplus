@@ -1427,33 +1427,31 @@ function TraderDetailsPage({
         </div>
       )}
 
-      {/* 主要内容区：左栏 = 行情图表 + 当前持仓，右栏 = 账户曲线 + 最近决策 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-start">
-        {/* 左栏（2/3 宽）：行情图表 + 当前持仓 */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* 行情图表：主视觉区 */}
-          <div
-            ref={chartSectionRef}
-            className="chart-container animate-slide-in scroll-mt-32"
-            style={{ animationDelay: '0.1s' }}
-          >
-            <MarketChartCard
-              traderId={selectedTrader.trader_id}
-              selectedSymbol={selectedChartSymbol}
-              updateKey={chartUpdateKey}
-              exchangeId={getExchangeTypeFromList(
-                selectedTrader.exchange_id,
-                exchanges
-              )}
-              defaultSymbol={strategyDefaultSymbol}
-            />
-          </div>
+      {/* 主要内容区：第一行 = 账户曲线(3/5) + 最近决策(2/5)，第二行 = 行情图表，第三行 = 当前持仓 */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6 items-start">
+        {/* 行情图表（第二行整行） */}
+        <div
+          ref={chartSectionRef}
+          className="lg:col-start-1 lg:col-span-5 lg:row-start-2 chart-container animate-slide-in scroll-mt-32"
+          style={{ animationDelay: '0.15s' }}
+        >
+          <MarketChartCard
+            traderId={selectedTrader.trader_id}
+            selectedSymbol={selectedChartSymbol}
+            updateKey={chartUpdateKey}
+            exchangeId={getExchangeTypeFromList(
+              selectedTrader.exchange_id,
+              exchanges
+            )}
+            defaultSymbol={strategyDefaultSymbol}
+          />
+        </div>
 
-          {/* 当前持仓 */}
-          <div
-            className="binance-card p-6 animate-slide-in"
-            style={{ animationDelay: '0.15s' }}
-          >
+        {/* 当前持仓（第三行整行） */}
+        <div
+          className="lg:col-start-1 lg:col-span-5 lg:row-start-3 binance-card p-6 animate-slide-in"
+          style={{ animationDelay: '0.18s' }}
+        >
             <div className="flex items-center justify-between mb-5">
               <h2
                 className="text-xl font-bold flex items-center gap-2"
@@ -1786,20 +1784,20 @@ function TraderDetailsPage({
             )}
           </div>
           {/* 持仓卡片结束 */}
+
+        {/* 账户曲线（第一行左，3/5 宽） */}
+        <div
+          className="lg:col-start-1 lg:col-span-3 lg:row-start-1 animate-slide-in"
+          style={{ animationDelay: '0.1s' }}
+        >
+          <EquityChart traderId={selectedTrader.trader_id} />
         </div>
 
-        {/* 右栏（1/3 宽）：账户曲线 + 最近决策 */}
-        <div className="space-y-6">
-          {/* 账户曲线 */}
-          <div className="animate-slide-in" style={{ animationDelay: '0.12s' }}>
-            <EquityChart traderId={selectedTrader.trader_id} />
-          </div>
-
-          {/* 最近决策 */}
-          <div
-            className="binance-card p-6 animate-slide-in"
-            style={{ animationDelay: '0.2s' }}
-          >
+        {/* 最近决策（第一行右，2/5 宽） */}
+        <div
+          className="lg:col-start-4 lg:col-span-2 lg:row-start-1 binance-card p-6 animate-slide-in"
+          style={{ animationDelay: '0.12s' }}
+        >
           {/* 标题 */}
           <div
             className="flex items-center gap-3 mb-5 pb-4 border-b"
@@ -1886,8 +1884,7 @@ function TraderDetailsPage({
             )}
           </div>
           </div>
-        </div>
-        {/* 右栏结束 */}
+        {/* 最近决策结束 */}
       </div>
 
       {/* Position History Section */}
