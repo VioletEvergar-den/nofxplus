@@ -78,6 +78,7 @@ type AutoTraderConfig struct {
 	// Scan configuration
 	ScanInterval      time.Duration // Scan interval (recommended 3 minutes)
 	OrderSyncInterval time.Duration // Order sync interval (default 30 seconds, can be adjusted per exchange)
+	AdaptiveInterval  bool          // Enable adaptive scan interval based on market volatility; default off = strictly use ScanInterval
 
 	// Account configuration
 	InitialBalance float64 // Initial balance (for P&L calculation, must be set manually)
@@ -621,6 +622,11 @@ func (at *AutoTrader) calculateAdaptiveScanInterval() time.Duration {
 	baseInterval := at.config.ScanInterval
 	if baseInterval == 0 {
 		baseInterval = 3 * time.Minute // Default 3 minutes
+	}
+
+	// Adaptive interval disabled: strictly use the user-configured interval
+	if !at.config.AdaptiveInterval {
+		return baseInterval
 	}
 
 	// High volatility threshold (> 2% average move per position)

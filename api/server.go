@@ -463,6 +463,7 @@ type CreateTraderRequest struct {
 	EnableFeedback        *bool   `json:"enable_feedback"`         // Pointer type, nil means use default value true
 	EnableLLMFeedback     *bool   `json:"enable_llm_feedback"`     // Pointer type, nil means use default value true
 	EnablePromptEvolution *bool   `json:"enable_prompt_evolution"` // Pointer type, nil means use default value true
+	AdaptiveInterval      *bool   `json:"adaptive_interval"`       // Pointer type, nil means use default value false
 	// The following fields are kept for backward compatibility, new version uses strategy config
 	BTCETHLeverage       int    `json:"btc_eth_leverage"`
 	AltcoinLeverage      int    `json:"altcoin_leverage"`
@@ -741,6 +742,7 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		EnableFeedback:        enableFeedback,
 		EnableLLMFeedback:     enableLLMFeedback,
 		EnablePromptEvolution: enablePromptEvolution,
+		AdaptiveInterval:      req.AdaptiveInterval != nil && *req.AdaptiveInterval,
 		ScanIntervalMinutes:   scanIntervalMinutes,
 		IsRunning:             false,
 	}
@@ -788,6 +790,7 @@ type UpdateTraderRequest struct {
 	EnableFeedback        *bool   `json:"enable_feedback"`
 	EnableLLMFeedback     *bool   `json:"enable_llm_feedback"`
 	EnablePromptEvolution *bool   `json:"enable_prompt_evolution"`
+	AdaptiveInterval      *bool   `json:"adaptive_interval"`
 	// The following fields are kept for backward compatibility, new version uses strategy config
 	BTCETHLeverage       int    `json:"btc_eth_leverage"`
 	AltcoinLeverage      int    `json:"altcoin_leverage"`
@@ -905,6 +908,7 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		EnableFeedback:        enableFeedback,
 		EnableLLMFeedback:     enableLLMFeedback,
 		EnablePromptEvolution: enablePromptEvolution,
+		AdaptiveInterval:      req.AdaptiveInterval != nil && *req.AdaptiveInterval,
 		ScanIntervalMinutes:   scanIntervalMinutes,
 		IsRunning:             existingTrader.IsRunning, // Keep original value
 	}
@@ -2198,6 +2202,7 @@ func (s *Server) handleGetTraderConfig(c *gin.Context) {
 		"use_coin_pool":           traderConfig.UseCoinPool,
 		"use_oi_top":              traderConfig.UseOITop,
 		"enable_feedback":         traderConfig.EnableFeedback,
+		"adaptive_interval":       traderConfig.AdaptiveInterval,
 		"enable_llm_feedback":     traderConfig.EnableLLMFeedback,
 		"enable_prompt_evolution": traderConfig.EnablePromptEvolution,
 		"show_in_competition":     traderConfig.ShowInCompetition,

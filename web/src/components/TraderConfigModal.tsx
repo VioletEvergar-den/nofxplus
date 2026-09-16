@@ -39,6 +39,7 @@ interface FormState {
   enable_feedback: boolean
   enable_llm_feedback: boolean
   enable_prompt_evolution: boolean
+  adaptive_interval: boolean
 }
 
 interface TraderConfigModalProps {
@@ -73,6 +74,7 @@ export function TraderConfigModal({
     enable_feedback: true,
     enable_llm_feedback: true,
     enable_prompt_evolution: true,
+    adaptive_interval: false,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [strategies, setStrategies] = useState<Strategy[]>([])
@@ -115,6 +117,7 @@ export function TraderConfigModal({
         enable_feedback: traderData.enable_feedback ?? true,
         enable_llm_feedback: traderData.enable_llm_feedback ?? true,
         enable_prompt_evolution: traderData.enable_prompt_evolution ?? true,
+        adaptive_interval: traderData.adaptive_interval ?? false,
       })
     } else if (!isEditMode) {
       setFormData({
@@ -129,6 +132,7 @@ export function TraderConfigModal({
         enable_feedback: true,
         enable_llm_feedback: true,
         enable_prompt_evolution: true,
+        adaptive_interval: false,
       })
     }
   }, [traderData, isEditMode, availableModels, availableExchanges])
@@ -187,6 +191,7 @@ export function TraderConfigModal({
         enable_feedback: formData.enable_feedback,
         enable_llm_feedback: formData.enable_llm_feedback,
         enable_prompt_evolution: formData.enable_prompt_evolution,
+        adaptive_interval: formData.adaptive_interval,
       }
 
       // 只在编辑模式时包含initial_balance
@@ -459,6 +464,40 @@ export function TraderConfigModal({
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     {t('scanIntervalRecommend', language)}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-[#EAECEF] block mb-2">
+                    {language === 'zh' ? '自适应扫描间隔' : 'Adaptive Scan Interval'}
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleInputChange('adaptive_interval', false)}
+                      className={`flex-1 px-3 py-2 rounded text-sm ${
+                        !formData.adaptive_interval
+                          ? 'bg-[#F0B90B] text-black'
+                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                      }`}
+                    >
+                      {language === 'zh' ? '关闭（严格按间隔）' : 'Off (strict)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleInputChange('adaptive_interval', true)}
+                      className={`flex-1 px-3 py-2 rounded text-sm ${
+                        formData.adaptive_interval
+                          ? 'bg-[#F0B90B] text-black'
+                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                      }`}
+                    >
+                      {language === 'zh' ? '开启' : 'On'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {language === 'zh'
+                      ? '开启后系统会根据市场波动自动加速或放慢扫描（可能远快于上方间隔，消耗更多AI调用）。默认关闭。'
+                      : 'When enabled, the system dynamically speeds up or slows down scanning based on market volatility (may scan much faster than the interval above and consume more AI calls). Default off.'}
                   </p>
                 </div>
                 <div>

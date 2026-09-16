@@ -414,6 +414,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
         enable_feedback: data.enable_feedback,
         enable_llm_feedback: data.enable_llm_feedback,
         enable_prompt_evolution: data.enable_prompt_evolution,
+        adaptive_interval: data.adaptive_interval,
       }
 
       console.log('🔥 handleSaveEditTrader - data:', data)
@@ -471,6 +472,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
         enable_feedback: settings.enableFeedback,
         enable_llm_feedback: settings.enableLLMFeedback,
         enable_prompt_evolution: settings.enablePromptEvolution,
+        adaptive_interval: config.adaptive_interval ?? false,
         btc_eth_leverage: config.btc_eth_leverage,
         altcoin_leverage: config.altcoin_leverage,
         trading_symbols: config.trading_symbols,

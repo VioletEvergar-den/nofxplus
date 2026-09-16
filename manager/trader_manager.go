@@ -657,6 +657,7 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		CustomAPIURL:          aiModelCfg.CustomAPIURL,
 		CustomModelName:       aiModelCfg.CustomModelName,
 		ScanInterval:          time.Duration(traderCfg.ScanIntervalMinutes) * time.Minute,
+		AdaptiveInterval:      traderCfg.AdaptiveInterval,
 		InitialBalance:        traderCfg.InitialBalance,
 		TradingMode:           traderCfg.TradingMode, // Trading mode/variant
 		IsCrossMargin:         traderCfg.IsCrossMargin,
