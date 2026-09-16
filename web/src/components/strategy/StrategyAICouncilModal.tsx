@@ -53,12 +53,13 @@ const ROUNDS: { round: number; titleKey: string }[] = [
   { round: 1, titleKey: 'round1' },
   { round: 2, titleKey: 'round2' },
   { round: 3, titleKey: 'round3' },
+  { round: 4, titleKey: 'round4' },
 ]
 
 const ROLE_ORDER = [
   'intel_planner', 'market_analyst', 'coin_researcher',
   'chief_trader', 'strategy_architect', 'timeframe_engineer', 'coin_planner',
-  'risk_officer', 'chief_reviewer',
+  'risk_officer', 'chief_reviewer', 'prompt_writer',
 ]
 
 // ---------- 配置摘要 ----------
@@ -481,6 +482,16 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                   )}
 
                   <ConfigSummary config={council.result.config} lang={language} />
+
+                  {council.result.config?.prompt_sections?.role_definition && (
+                    <div className="rounded-lg bg-amber-500/5 border border-amber-500/25 px-3 py-2">
+                      <div className="flex items-center gap-1.5 text-[11px] text-amber-400">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        {t('aiCouncil.promptGenerated', language)}
+                      </div>
+                      <p className="text-[10px] text-[#848E9C] mt-0.5">{t('aiCouncil.promptGeneratedNote', language)}</p>
+                    </div>
+                  )}
 
                   {council.result.scan_interval_suggestion > 0 && (
                     <div className="rounded-lg bg-amber-500/5 border border-amber-500/25 px-3 py-2">

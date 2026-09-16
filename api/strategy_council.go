@@ -118,6 +118,7 @@ var councilRoles = []councilRoleDef{
 	{ID: "coin_planner", Emoji: "🗂️", NameZH: "币种来源规划师", NameEN: "Coin Planner", Round: 2},
 	{ID: "risk_officer", Emoji: "🛡️", NameZH: "风控官", NameEN: "Risk Officer", Round: 3},
 	{ID: "chief_reviewer", Emoji: "⚖️", NameZH: "首席评审", NameEN: "Chief Reviewer", Round: 3},
+	{ID: "prompt_writer", Emoji: "✍️", NameZH: "首席策略撰写官", NameEN: "Chief Prompt Writer", Round: 4},
 }
 
 // ---------- 统一信封 ----------
@@ -330,11 +331,80 @@ payload 字段：
 - reasoning: 终审总结（做了哪些裁决、为什么）
 - verdicts: object[]，对每条 concern/objection 的裁决: {"concern_from": "角色ID", "decision": "accepted"|"rejected", "reason": "理由"}
 - 裁决原则：安全性优先于收益性；交易员的 no_trade_conditions 与风控官的 objections 除非有强理由否则采纳。`
+	case "prompt_writer":
+		pw := base + `
+## 你的任务（首席策略撰写官）
+你是专家团的首席笔杆子：基于全部上游备忘录（交易计划/策略架构/周期指标/币种来源/风控审查/终审裁决），为交易系统撰写一套完整、可执行的 System Prompt 策略。这份提示词将直接作为 AI 交易员的行为准则，质量标准是「拿来即可实盘」。
+
+写作要求（必须遵守）：
+1. 风格对标真实实战策略提示词：有清晰的人设身份与方法论体系（如维科夫+SMC+缠论融合、马丁网格、动量突破等，依据策略意图选定）、具体的入场信号条件、明确的执行规则、逐条列出的禁忌清单。
+2. 必须具体可执行：写明明确的交易执行数字——信心分阈值、止损止盈距离或结构位规则、分批加减仓规则、持仓时长预期、移动止损规则等。拒绝空泛套话（如"注意风险""谨慎交易"这类没有操作含义的句子）。
+3. 严禁写死与参数配置冲突的系统硬约束：最大同时持仓数、交易所杠杆上限、保证金使用率、单仓价值比例等由程序动态注入，提示词中不要重复定义这些全局数字。
+4. 四段结构：
+   - role_definition（角色定义）：人设身份 + 方法论体系 + 核心目标。核心目标必须包含：最大化夏普比率（平均回报/回报波动），纪律优先于利润。
+   - trading_frequency（交易频率理念）：多久评估交易一次、什么情况必须空仓等待、持仓周期预期（按策略类型给具体时长范围）。
+   - entry_standards（入场标准）：具体的信号组合条件（形态/指标/资金流/结构位满足什么才允许进场）、分批建仓规则、明确列出禁止入场的情形。
+   - decision_process（决策流程）：从「检查现有持仓（止盈止损判断）→ 分析候选币种 → 输出决策」的完整步骤，含每步的执行纪律与思维链要求。
+5. custom_prompt（可选）：额外的禁忌清单、风格化要求或特色纪律；没有则输出空字符串 ""。
+6. 全文用 {{LANG}} 书写，语气坚定、指令明确、面向执行者。
+
+payload 字段：
+- prompt_sections: {"role_definition": string, "trading_frequency": string, "entry_standards": string, "decision_process": string}（四段均必填）
+- custom_prompt: string（可为 ""）
+- style_note: 一句话说明本策略的风格定位与目标行情`
+		return strings.Replace(pw, "{{LANG}}", summaryLang, 1)
 	}
 	return base
 }
 
 // ---------- 补丁合并与程序审核 ----------
+
+// extractWriterSections 从撰写官 payload 中提取并校验 System Prompt 四段
+// 返回 (四段文本map, 错误列表)；错误非空表示需要打回重写
+func extractWriterSections(payload map[string]any) (map[string]string, []string) {
+	var errs []string
+	raw, ok := payload["prompt_sections"].(map[string]any)
+	if !ok {
+		return nil, []string{"缺少 prompt_sections 对象"}
+	}
+	get := func(key string) string {
+		s, _ := raw[key].(string)
+		return strings.TrimSpace(s)
+	}
+	role := get("role_definition")
+	freq := get("trading_frequency")
+	entry := get("entry_standards")
+	process := get("decision_process")
+
+	if len([]rune(role)) < 60 {
+		errs = append(errs, "role_definition 过短（至少 60 字，需含人设与方法论体系）")
+	}
+	if len([]rune(freq)) < 30 {
+		errs = append(errs, "trading_frequency 过短（至少 30 字）")
+	}
+	if len([]rune(entry)) < 80 {
+		errs = append(errs, "entry_standards 过短（至少 80 字，需含具体信号条件与禁止入场情形）")
+	}
+	if len([]rune(process)) < 40 {
+		errs = append(errs, "decision_process 过短（至少 40 字，需含完整决策步骤）")
+	}
+	for name, txt := range map[string]string{
+		"role_definition": role, "trading_frequency": freq,
+		"entry_standards": entry, "decision_process": process,
+	} {
+		if len([]rune(txt)) > 6000 {
+			errs = append(errs, name+" 超长（上限 6000 字）")
+		}
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return map[string]string{
+		"role_definition": role, "trading_frequency": freq,
+		"entry_standards": entry, "decision_process": process,
+	}, nil
+}
+
 
 var validTimeframes = map[string]bool{
 	"1m": true, "3m": true, "5m": true, "15m": true,
@@ -1049,6 +1119,44 @@ func (s *Server) runCouncil(st *councilState, modelID string, base *store.Strate
 	if st.cancelFlag.Load() {
 		st.setStatus("cancelled", "")
 		return
+	}
+
+	// ---------- 第 4 轮：首席策略撰写官（生成 System Prompt 四段）----------
+	// 参数已定稿，由撰写官基于全部团队结论撰写可实盘执行的提示词策略
+	upstreamWriter := buildUpstreamContext("market_analyst", "coin_researcher", "chief_trader", "strategy_architect", "timeframe_engineer", "coin_planner", "risk_officer")
+	reviewNote := ""
+	if reasoning != "" {
+		reviewNote = fmt.Sprintf("### 首席评审终审裁决（参数已定稿）\n%s\n\n", reasoning)
+	}
+	writerExtra := ""
+	for attempt := 0; attempt < 3; attempt++ {
+		if st.cancelFlag.Load() {
+			st.setStatus("cancelled", "")
+			return
+		}
+		envWriter, err := runOneRole("prompt_writer", intentBlock+upstreamWriter+reviewNote+writerExtra+"\n请撰写完整的 System Prompt 策略（四段结构）。")
+		if err != nil {
+			// 撰写失败不毁掉会诊：保留默认/现有提示词
+			clampWarnings = append(clampWarnings, "提示词撰写失败，已保留原提示词: "+err.Error())
+			break
+		}
+		secs, verrs := extractWriterSections(envWriter.Payload)
+		if len(verrs) == 0 {
+			base.PromptSections.RoleDefinition = secs["role_definition"]
+			base.PromptSections.TradingFrequency = secs["trading_frequency"]
+			base.PromptSections.EntryStandards = secs["entry_standards"]
+			base.PromptSections.DecisionProcess = secs["decision_process"]
+			if cp, _ := envWriter.Payload["custom_prompt"].(string); strings.TrimSpace(cp) != "" {
+				base.CustomPrompt = strings.TrimSpace(cp)
+			}
+			break
+		}
+		if attempt == 2 {
+			clampWarnings = append(clampWarnings, "提示词未通过程序校验，已保留原提示词: "+strings.Join(verrs, "；"))
+			break
+		}
+		errList, _ := json.Marshal(verrs)
+		writerExtra = fmt.Sprintf("\n## ⚠️ 上一次撰写未通过程序校验，请修复后重新输出完整四段\n%s\n", string(errList))
 	}
 
 	st.setResult(&councilFinalResult{
