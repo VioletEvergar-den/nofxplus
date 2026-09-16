@@ -35,6 +35,7 @@ import { CoinSourceEditor } from '../components/strategy/CoinSourceEditor'
 import { IndicatorEditor } from '../components/strategy/IndicatorEditor'
 import { RiskControlEditor } from '../components/strategy/RiskControlEditor'
 import { PromptSectionsEditor } from '../components/strategy/PromptSectionsEditor'
+import { StrategyAICouncilModal } from '../components/strategy/StrategyAICouncilModal'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
@@ -53,6 +54,9 @@ export function StrategyStudioPage() {
   // AI Models for test run
   const [aiModels, setAiModels] = useState<AIModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState<string>('')
+
+  // AI 策略专家团会诊
+  const [showCouncilModal, setShowCouncilModal] = useState(false)
 
   // Accordion states for left panel
   const [expandedSections, setExpandedSections] = useState({
@@ -706,6 +710,15 @@ export function StrategyStudioPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => setShowCouncilModal(true)}
+                    disabled={!editingConfig && !selectedStrategy}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                    style={{ background: 'rgba(240, 185, 11, 0.1)', border: '1px solid rgba(240, 185, 11, 0.35)', color: '#F0B90B' }}
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    {t('aiCouncil.title')}
+                  </button>
                   {!selectedStrategy.is_active && (
                     <button
                       onClick={() => handleActivateStrategy(selectedStrategy.id)}
@@ -1040,6 +1053,23 @@ export function StrategyStudioPage() {
           </div>
         </div>
       </div>
+
+      {/* AI 策略专家团会诊 */}
+      <StrategyAICouncilModal
+        open={showCouncilModal}
+        onClose={() => setShowCouncilModal(false)}
+        onApply={(config) => {
+          if (editingConfig) {
+            setEditingConfig({ ...editingConfig, ...config })
+          } else {
+            setEditingConfig(config)
+          }
+          setHasChanges(true)
+        }}
+        aiModels={aiModels}
+        defaultModelId={selectedModelId}
+        currentConfig={editingConfig}
+      />
     </div>
   )
 }
