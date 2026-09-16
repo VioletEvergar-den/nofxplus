@@ -434,6 +434,239 @@ func (t *FuturesTrader) OpenShort(symbol string, quantity float64, leverage int)
 	return result, nil
 }
 
+// makerFirstWaitSeconds is the default wait time for the passive limit order
+// before falling back to a market order for the unfilled remainder.
+const makerFirstWaitSeconds = 8
+
+// formatLimitPrice formats a limit price using the symbol's PRICE_FILTER tick size
+func (t *FuturesTrader) formatLimitPrice(symbol string, price float64) (string, error) {
+	exchangeInfo, err := t.client.NewExchangeInfoService().Do(context.Background())
+	if err != nil {
+		return "", fmt.Errorf("failed to get trading rules: %w", err)
+	}
+
+	for _, s := range exchangeInfo.Symbols {
+		if s.Symbol == symbol {
+			for _, filter := range s.Filters {
+				if filter["filterType"] == "PRICE_FILTER" {
+					tickSize := filter["tickSize"].(string)
+					precision := calculatePrecision(tickSize)
+					return strconv.FormatFloat(price, 'f', precision, 64), nil
+				}
+			}
+		}
+	}
+
+	// Default to 4 decimal places if PRICE_FILTER not found
+	return strconv.FormatFloat(price, 'f', 4, 64), nil
+}
+
+// OpenLongMakerFirst opens a long position using maker-first execution:
+// place a passive limit order 0.05% below market, wait up to waitSeconds for
+// passive fills, then cancel the remainder and market-fill what is left.
+// Returns the same result map as OpenLong, plus execution details.
+func (t *FuturesTrader) OpenLongMakerFirst(symbol string, quantity float64, leverage int, waitSeconds int) (map[string]interface{}, error) {
+	return t.openMakerFirst(symbol, quantity, leverage, futures.SideTypeBuy, futures.PositionSideTypeLong, waitSeconds)
+}
+
+// OpenShortMakerFirst opens a short position using maker-first execution
+func (t *FuturesTrader) OpenShortMakerFirst(symbol string, quantity float64, leverage int, waitSeconds int) (map[string]interface{}, error) {
+	return t.openMakerFirst(symbol, quantity, leverage, futures.SideTypeSell, futures.PositionSideTypeShort, waitSeconds)
+}
+
+// openMakerFirst implements the maker-first execution flow for both directions
+func (t *FuturesTrader) openMakerFirst(symbol string, quantity float64, leverage int,
+	side futures.SideType, positionSide futures.PositionSideType, waitSeconds int) (map[string]interface{}, error) {
+
+	logger.Infof("  🎯 Maker-first execution for %s %s: passive limit → %ds wait → market fallback", positionSide, symbol, waitSeconds)
+
+	// Cancel all pending orders for this symbol (clean up old stop-loss and take-profit orders)
+	if err := t.CancelAllOrders(symbol); err != nil {
+		logger.Infof("  ⚠ Failed to cancel old pending orders (may not have any): %v", err)
+	}
+
+	// Set leverage
+	if err := t.SetLeverage(symbol, leverage); err != nil {
+		return nil, err
+	}
+
+	// Format quantity to correct precision
+	quantityStr, err := t.FormatQuantity(symbol, quantity)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if formatted quantity is 0 (prevent rounding errors)
+	quantityFloat, parseErr := strconv.ParseFloat(quantityStr, 64)
+	if parseErr != nil || quantityFloat <= 0 {
+		return nil, fmt.Errorf("position size too small, rounded to 0 (original: %.8f → formatted: %s). Suggest increasing position amount or selecting a lower-priced coin", quantity, quantityStr)
+	}
+
+	// Check minimum notional value (Binance requires at least 10 USDT)
+	if err := t.CheckMinNotional(symbol, quantityFloat); err != nil {
+		return nil, err
+	}
+
+	// Passive limit price: 0.05% below market for long, above market for short
+	marketPrice, err := t.GetMarketPrice(symbol)
+	if err != nil {
+		return nil, err
+	}
+	passivePrice := marketPrice * 0.9995
+	if side == futures.SideTypeSell {
+		passivePrice = marketPrice * 1.0005
+	}
+	priceStr, err := t.formatLimitPrice(symbol, passivePrice)
+	if err != nil {
+		return nil, err
+	}
+
+	// Place GTC limit order at the passive price
+	limitOrder, err := t.client.NewCreateOrderService().
+		Symbol(symbol).
+		Side(side).
+		PositionSide(positionSide).
+		Type(futures.OrderTypeLimit).
+		TimeInForce(futures.TimeInForceTypeGTC).
+		Price(priceStr).
+		Quantity(quantityStr).
+		NewClientOrderID(getBrOrderID()).
+		Do(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to place maker limit order: %w", err)
+	}
+	logger.Infof("  📌 Maker limit order placed: %s %s @ %s (order ID: %d), waiting up to %ds",
+		symbol, quantityStr, priceStr, limitOrder.OrderID, waitSeconds)
+
+	// Poll order status every 2 seconds until filled, dead, or deadline reached
+	orderIDStr := strconv.FormatInt(limitOrder.OrderID, 10)
+	deadline := time.Now().Add(time.Duration(waitSeconds) * time.Second)
+	filledQty := 0.0
+	avgPrice := 0.0
+	fullyFilled := false
+	for {
+		time.Sleep(2 * time.Second)
+		status, err := t.GetOrderStatus(symbol, orderIDStr)
+		if err != nil {
+			logger.Infof("  ⚠ Failed to query maker order status (will retry): %v", err)
+			if time.Now().After(deadline) {
+				break
+			}
+			continue
+		}
+		if eq, ok := status["executedQty"].(float64); ok && eq > 0 {
+			filledQty = eq
+		}
+		if ap, ok := status["avgPrice"].(float64); ok && ap > 0 {
+			avgPrice = ap
+		}
+		st, _ := status["status"].(string)
+		if st == "FILLED" {
+			fullyFilled = true
+			break
+		}
+		if st == "CANCELED" || st == "EXPIRED" || st == "REJECTED" {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+	}
+
+	// If anything filled, cancel the remainder (no-op if already fully filled or dead)
+	if !fullyFilled && filledQty < quantityFloat {
+		if _, err := t.client.NewCancelOrderService().
+			Symbol(symbol).
+			OrderID(limitOrder.OrderID).
+			Do(context.Background()); err != nil {
+			// Order may have been fully filled between the last poll and cancel - not fatal
+			logger.Infof("  ⚠ Failed to cancel maker order (may be filled): %v", err)
+		}
+		// Final status query to capture any last-instant fills before cancellation
+		if status, err := t.GetOrderStatus(symbol, orderIDStr); err == nil {
+			if eq, ok := status["executedQty"].(float64); ok && eq > filledQty {
+				filledQty = eq
+			}
+			if ap, ok := status["avgPrice"].(float64); ok && ap > 0 {
+				avgPrice = ap
+			}
+			if st, _ := status["status"].(string); st == "FILLED" {
+				fullyFilled = true
+			}
+		}
+	}
+
+	// Fully (or sufficiently) filled by the maker order - done
+	if fullyFilled || filledQty >= quantityFloat {
+		logger.Infof("  ✓ Maker order fully filled: %s %s @ %.8f (saved taker fee)", symbol, quantityStr, avgPrice)
+		return map[string]interface{}{
+			"orderId":        limitOrder.OrderID,
+			"symbol":         symbol,
+			"status":         "FILLED",
+			"makerFilledQty": filledQty,
+			"makerPrice":     passivePrice,
+			"avgPrice":       avgPrice,
+			"execution":      "maker",
+		}, nil
+	}
+
+	// Market-fill the remainder (if any) to guarantee the position is established
+	result := map[string]interface{}{
+		"orderId":        limitOrder.OrderID,
+		"symbol":         symbol,
+		"status":         "FILLED",
+		"makerFilledQty": filledQty,
+		"makerPrice":     passivePrice,
+		"avgPrice":       avgPrice,
+	}
+	execution := "taker"
+	if filledQty > 0 {
+		execution = "mixed"
+		logger.Infof("  📊 Maker order partially filled: %.4f/%.4f, market-filling the remainder", filledQty, quantityFloat)
+
+		remaining := quantityFloat - filledQty
+		remainingStr, err := t.FormatQuantity(symbol, remaining)
+		if err != nil {
+			return nil, fmt.Errorf("maker fill %.4f succeeded but failed to format remaining quantity: %w", filledQty, err)
+		}
+		remainingFloat, _ := strconv.ParseFloat(remainingStr, 64)
+		if remainingFloat > 0 {
+			marketOrder, err := t.client.NewCreateOrderService().
+				Symbol(symbol).
+				Side(side).
+				PositionSide(positionSide).
+				Type(futures.OrderTypeMarket).
+				Quantity(remainingStr).
+				NewClientOrderID(getBrOrderID()).
+				Do(context.Background())
+			if err != nil {
+				return nil, fmt.Errorf("maker fill %.4f succeeded but market fallback for remaining %.4f failed: %w", filledQty, remainingFloat, err)
+			}
+			result["orderId"] = marketOrder.OrderID
+			result["marketFallbackQty"] = remainingFloat
+		}
+	} else {
+		logger.Infof("  📊 Maker order not filled within %ds, falling back to market order", waitSeconds)
+		marketOrder, err := t.client.NewCreateOrderService().
+			Symbol(symbol).
+			Side(side).
+			PositionSide(positionSide).
+			Type(futures.OrderTypeMarket).
+			Quantity(quantityStr).
+			NewClientOrderID(getBrOrderID()).
+			Do(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to open %s position (market fallback): %w", positionSide, err)
+		}
+		result["orderId"] = marketOrder.OrderID
+		result["marketFallbackQty"] = quantityFloat
+	}
+	result["execution"] = execution
+
+	logger.Infof("✓ Position opened via maker-first execution (%s): %s quantity: %s", execution, symbol, quantityStr)
+	return result, nil
+}
+
 // CloseLong closes a long position
 func (t *FuturesTrader) CloseLong(symbol string, quantity float64) (map[string]interface{}, error) {
 	// If quantity is 0, get current position quantity

@@ -35,6 +35,19 @@ type TradeRecord struct {
 	Time         time.Time // Trade execution time
 }
 
+// MakerFirstOpener is an optional capability interface for exchanges that support
+// maker-first order execution: place a passive limit order first, wait briefly for
+// a passive fill, then fall back to a market order for any unfilled remainder.
+// Exchanges implementing this interface get lower taker fees and reduced slippage
+// on position opening; AutoTrader uses it via type assertion when available.
+type MakerFirstOpener interface {
+	// OpenLongMakerFirst opens a long position using maker-first execution
+	OpenLongMakerFirst(symbol string, quantity float64, leverage int, waitSeconds int) (map[string]interface{}, error)
+
+	// OpenShortMakerFirst opens a short position using maker-first execution
+	OpenShortMakerFirst(symbol string, quantity float64, leverage int, waitSeconds int) (map[string]interface{}, error)
+}
+
 // Trader Unified trader interface
 // Supports multiple trading platforms (Binance, Hyperliquid, etc.)
 type Trader interface {

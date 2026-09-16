@@ -1535,8 +1535,14 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, act
 		// Continue execution, doesn't affect trading
 	}
 
-	// Open position
-	order, err := at.trader.OpenLong(decision.Symbol, quantity, decision.Leverage)
+	// Open position - prefer maker-first execution (passive limit with market
+	// fallback, lower fees + less slippage) when the exchange supports it
+	var order map[string]interface{}
+	if mfo, ok := at.trader.(MakerFirstOpener); ok {
+		order, err = mfo.OpenLongMakerFirst(decision.Symbol, quantity, decision.Leverage, makerFirstWaitSeconds)
+	} else {
+		order, err = at.trader.OpenLong(decision.Symbol, quantity, decision.Leverage)
+	}
 	if err != nil {
 		return err
 	}
@@ -1659,8 +1665,14 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *decision.Decision, ac
 		// Continue execution, doesn't affect trading
 	}
 
-	// Open position
-	order, err := at.trader.OpenShort(decision.Symbol, quantity, decision.Leverage)
+	// Open position - prefer maker-first execution (passive limit with market
+	// fallback, lower fees + less slippage) when the exchange supports it
+	var order map[string]interface{}
+	if mfo, ok := at.trader.(MakerFirstOpener); ok {
+		order, err = mfo.OpenShortMakerFirst(decision.Symbol, quantity, decision.Leverage, makerFirstWaitSeconds)
+	} else {
+		order, err = at.trader.OpenShort(decision.Symbol, quantity, decision.Leverage)
+	}
 	if err != nil {
 		return err
 	}
