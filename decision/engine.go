@@ -1030,7 +1030,8 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 	sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n\n")
 
 	// 8. Schema prompt (Explain the fields defined in the schema) - system layer
-	schemaPrompt := GetSchemaPrompt(lang)
+	// Pass actual risk control so trading rules stay numerically consistent with Hard Constraints
+	schemaPrompt := GetSchemaPromptWithRisk(lang, &riskControl)
 	sb.WriteString(schemaPrompt)
 	sb.WriteString("\n\n")
 

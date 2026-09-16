@@ -1,6 +1,10 @@
 package decision
 
-import "fmt"
+import (
+	"fmt"
+
+	"nofx/store"
+)
 
 // ============================================================================
 // Trading Data Schema - 交易数据字典
@@ -443,16 +447,23 @@ var CommonMistakes = []CommonMistake{
 }
 
 // ========== Prompt生成函数 ==========
-// GetSchemaPrompt 生成Schema说明文本，用于AI Prompt
+// GetSchemaPrompt 生成Schema说明文本，用于AI Prompt（使用静态默认规则值）
 func GetSchemaPrompt(lang Language) string {
+	return GetSchemaPromptWithRisk(lang, nil)
+}
+
+// GetSchemaPromptWithRisk 生成Schema说明文本，并用实际风控配置覆盖与
+// Hard Constraints 冲突的静态默认值（保证金上限、单仓集中度），
+// 确保两段数字始终一致。rc 为 nil 时退回静态默认值（兼容旧调用）。
+func GetSchemaPromptWithRisk(lang Language, rc *store.RiskControlConfig) string {
 	if lang == LangChinese {
-		return getSchemaPromptZH()
+		return getSchemaPromptZH(rc)
 	}
-	return getSchemaPromptEN()
+	return getSchemaPromptEN(rc)
 }
 
 // getSchemaPromptZH 生成中文Prompt
-func getSchemaPromptZH() string {
+func getSchemaPromptZH(rc *store.RiskControlConfig) string {
 	prompt := "# 📖 数据字典与交易规则\n\n"
 	prompt += "## 📊 字段含义说明\n\n"
 
@@ -484,7 +495,17 @@ func getSchemaPromptZH() string {
 	prompt += "\n## ⚖️ 交易规则\n\n"
 	prompt += "### 风险管理\n"
 	for name, rule := range TradingRules.RiskManagement {
-		prompt += "- **" + name + "**: " + rule.DescZH + "\n  理由：" + rule.ReasonZH + "\n"
+		desc, reason := rule.DescZH, rule.ReasonZH
+		if rc != nil {
+			switch name {
+			case "MaxMarginUsage":
+				desc = fmt.Sprintf("保证金使用率不得超过%.0f%%（代码强制执行，与 Hard Constraints 一致）", rc.MaxMarginUsage*100)
+				reason = "保留剩余资金应对极端行情和追加保证金"
+			case "PositionSizeLimit":
+				desc = "单个仓位价值不得超过 Hard Constraints 中的 Position Value Limit（代码强制执行）"
+			}
+		}
+		prompt += "- **" + name + "**: " + desc + "\n  理由：" + reason + "\n"
 	}
 
 	prompt += "\n### 出场信号\n"
@@ -511,7 +532,7 @@ func getSchemaPromptZH() string {
 }
 
 // getSchemaPromptEN 生成英文Prompt
-func getSchemaPromptEN() string {
+func getSchemaPromptEN(rc *store.RiskControlConfig) string {
 	prompt := "# 📖 Data Dictionary & Trading Rules\n\n"
 	prompt += "## 📊 Field Definitions\n\n"
 
@@ -543,7 +564,17 @@ func getSchemaPromptEN() string {
 	prompt += "\n## ⚖️ Trading Rules\n\n"
 	prompt += "### Risk Management\n"
 	for name, rule := range TradingRules.RiskManagement {
-		prompt += "- **" + name + "**: " + rule.DescEN + "\n  Reason: " + rule.ReasonEN + "\n"
+		desc, reason := rule.DescEN, rule.ReasonEN
+		if rc != nil {
+			switch name {
+			case "MaxMarginUsage":
+				desc = fmt.Sprintf("Margin usage must not exceed %.0f%% (code-enforced, consistent with Hard Constraints)", rc.MaxMarginUsage*100)
+				reason = "Reserve remaining capital for extreme market conditions and margin calls"
+			case "PositionSizeLimit":
+				desc = "Single position value must not exceed the Position Value Limit in Hard Constraints (code-enforced)"
+			}
+		}
+		prompt += "- **" + name + "**: " + desc + "\n  Reason: " + reason + "\n"
 	}
 
 	prompt += "\n### Exit Signals\n"
