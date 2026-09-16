@@ -318,7 +318,7 @@ export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeI
         symbol={chartSymbol}
         interval={interval}
         traderID={traderId}
-        height={560}
+        height={280}
         exchange={currentExchange}
         onSymbolChange={setChartSymbol}
       />

@@ -470,7 +470,6 @@ export function AdvancedChart({
     const loadData = async (isRefresh = false) => {
       if (!candlestickSeriesRef.current) return
 
-      console.log('[AdvancedChart] Loading data for', symbol, interval, isRefresh ? '(refresh)' : '')
       // 只在首次加载时显示 loading，刷新时不显示避免闪烁
       if (!isRefresh) {
         setLoading(true)
@@ -480,7 +479,6 @@ export function AdvancedChart({
       try {
         // 1. 获取K线数据
         const klineData = await fetchKlineData(symbol, interval)
-        console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
         candlestickSeriesRef.current.setData(klineData)
 
         // 存储 volume/quoteVolume 数据供 tooltip 使用
@@ -539,20 +537,15 @@ export function AdvancedChart({
         // 3. 添加指标
         updateIndicators(klineData)
 
-        // 4. 获取并显示订单标记
-        if (traderID && candlestickSeriesRef.current) {
-          console.log('[AdvancedChart] Starting to fetch orders...')
+        // 4. 获取并显示订单标记（只在首次加载时拉取，避免每 5 秒重复请求与重建标记）
+        if (traderID && candlestickSeriesRef.current && !isRefresh) {
           const orders = await fetchOrders(traderID, symbol)
-          console.log('[AdvancedChart] Received orders:', orders)
 
           if (orders.length > 0) {
-            console.log('[AdvancedChart] Creating markers from', orders.length, 'orders')
-
             // 提取 K 线时间数组（已排序）
             const klineTimes = klineData.map((k: any) => k.time as number)
             const klineMinTime = klineTimes[0] || 0
             const klineMaxTime = klineTimes[klineTimes.length - 1] || 0
-            console.log('[AdvancedChart] Kline time range:', klineMinTime, '-', klineMaxTime, '(', klineTimes.length, 'candles)')
 
             // 二分查找：找到订单时间所属的 K 线蜡烛
             // 返回 time <= orderTime 的最大 K 线时间
@@ -591,8 +584,6 @@ export function AdvancedChart({
               const candleTime = findCandleTime(order.time)
 
               if (candleTime === null) {
-                console.warn('[AdvancedChart] ⚠️ Skipping order outside kline range:',
-                  order.time, '(', new Date(order.time * 1000).toISOString(), ')')
                 return
               }
 
@@ -610,11 +601,6 @@ export function AdvancedChart({
             // 按时间排序（lightweight-charts 要求标记按时间顺序）
             markers.sort((a, b) => (a.time as number) - (b.time as number))
 
-            console.log('[AdvancedChart] Valid markers:', markers.length, 'out of', orders.length)
-
-            console.log('[AdvancedChart] Setting', markers.length, 'markers on candlestick series')
-            console.log('[AdvancedChart] Markers data:', JSON.stringify(markers, null, 2))
-
             try {
               // 存储标记数据供后续切换使用
               currentMarkersDataRef.current = markers
@@ -629,12 +615,10 @@ export function AdvancedChart({
                 // 首次创建标记
                 seriesMarkersRef.current = createSeriesMarkers(candlestickSeriesRef.current, markersToShow)
               }
-              console.log('[AdvancedChart] ✅ Markers updated! Count:', markersToShow.length, 'Visible:', showOrderMarkers)
             } catch (err) {
               console.error('[AdvancedChart] ❌ Failed to set markers:', err)
             }
           } else {
-            console.log('[AdvancedChart] No orders found, clearing markers')
             try {
               if (seriesMarkersRef.current) {
                 seriesMarkersRef.current.setMarkers([])
@@ -643,11 +627,6 @@ export function AdvancedChart({
               console.error('[AdvancedChart] Failed to clear markers:', err)
             }
           }
-        } else {
-          console.log('[AdvancedChart] Skipping markers:', {
-            hasTraderID: !!traderID,
-            hasSeries: !!candlestickSeriesRef.current
-          })
         }
 
         // 只在初始加载时自动适配视图，避免刷新时抖动
