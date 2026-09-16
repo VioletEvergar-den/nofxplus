@@ -1778,11 +1778,12 @@ function TraderDetailsPage({
         </div>
         {/* 左侧栏结束 */}
 
-        {/* 右侧：最近决策（底部与左栏持仓卡齐平，列表在卡内滚动） */}
-        <div
-          className="flex flex-col binance-card p-6 animate-slide-in"
-          style={{ animationDelay: '0.12s' }}
-        >
+        {/* 右侧：最近决策（外层不贡献行高：大屏下内层卡片绝对定位铺满，行高由左栏决定，底部自动与持仓卡齐平） */}
+        <div className="relative">
+          <div
+            className="flex flex-col binance-card p-6 animate-slide-in lg:absolute lg:inset-0"
+            style={{ animationDelay: '0.12s' }}
+          >
           {/* 标题 */}
           <div
             className="flex items-center gap-3 mb-5 pb-4 border-b"
@@ -1868,6 +1869,7 @@ function TraderDetailsPage({
             )}
           </div>
           </div>
+        </div>
         {/* 最近决策结束 */}
       </div>
 
