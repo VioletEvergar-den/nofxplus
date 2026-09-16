@@ -36,6 +36,7 @@ import {
   Settings,
   Sparkles,
   X,
+  HelpCircle,
 } from 'lucide-react'
 import { confirmToast } from '../lib/notify'
 import { toast } from 'sonner'
@@ -173,6 +174,8 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [promptLabTraderId, setPromptLabTraderId] = useState<string | null>(null)
   const [analysisTraderId, setAnalysisTraderId] = useState<string | null>(null)
+  const [showPromptLabHelp, setShowPromptLabHelp] = useState(false)
+  const [showAnalysisHelp, setShowAnalysisHelp] = useState(false)
   // Toggle wallet address visibility for a trader
   const toggleTraderAddressVisibility = (traderId: string) => {
     setVisibleTraderAddresses(prev => {
@@ -1634,16 +1637,52 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
                   {language === 'zh' ? '交易员提示词实验室' : 'Trader Prompt Lab'}
                 </h2>
               </div>
-              <button
-                className="p-1.5 rounded-lg text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139] transition-colors"
-                onClick={() => setPromptLabTraderId(null)}
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    showPromptLabHelp
+                      ? 'text-[#F0B90B] bg-[#F0B90B]/10'
+                      : 'text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139]'
+                  }`}
+                  onClick={() => setShowPromptLabHelp(v => !v)}
+                  aria-label="Help"
+                  title={language === 'zh' ? '使用说明' : 'How to use'}
+                >
+                  <HelpCircle className="h-5 w-5" />
+                </button>
+                <button
+                  className="p-1.5 rounded-lg text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139] transition-colors"
+                  onClick={() => setPromptLabTraderId(null)}
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto p-6">
+              {showPromptLabHelp && (
+                <div className="mb-6 rounded-xl border border-[#F0B90B]/30 bg-[#F0B90B]/5 p-4 text-sm leading-relaxed text-[#B7BDC6] space-y-2">
+                  <div className="font-semibold text-[#F0B90B]">
+                    {language === 'zh' ? '这是什么？' : 'What is this?'}
+                  </div>
+                  {language === 'zh' ? (
+                    <>
+                      <p>· AI 会基于该交易员的<strong className="text-[#EAECEF]">历史交易表现</strong>，每进化一代自动生成 3 个提示词变体（A / B / C），持续优化交易策略。</p>
+                      <p>· <strong className="text-[#EAECEF]">点击变体卡片</strong>可查看详情和完整提示词内容；点击「<strong className="text-[#F0B90B]">应用</strong>」将该变体设为下一轮决策使用的版本。</p>
+                      <p>· 每积累 <strong className="text-[#EAECEF]">10 笔平仓交易</strong>自动进化一代；表现数据（总收益率 / 胜率 / 夏普比率）来自实盘反馈。</p>
+                      <p>· 指标显示 <strong className="text-[#848E9C]">0.00%</strong> 表示该交易员尚未积累足够平仓交易，先让它正常交易即可。</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>· AI generates 3 prompt variants (A / B / C) each generation based on this trader&apos;s <strong className="text-[#EAECEF]">historical performance</strong>.</p>
+                      <p>· <strong className="text-[#EAECEF]">Click a card</strong> to inspect details and the full prompt; press「<strong className="text-[#F0B90B]">Apply</strong>」to use it for the next decision cycle.</p>
+                      <p>· A new generation evolves automatically every <strong className="text-[#EAECEF]">10 closed trades</strong>; metrics come from live feedback.</p>
+                      <p>· Metrics showing <strong className="text-[#848E9C]">0.00%</strong> mean not enough closed trades yet — just let it trade.</p>
+                    </>
+                  )}
+                </div>
+              )}
               <LiveTraderPromptLab traderId={promptLabTraderId} showHeader={false} />
             </div>
           </div>
@@ -1665,16 +1704,52 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
                   {language === 'zh' ? '交易分析' : 'Trading Analysis'}
                 </h2>
               </div>
-              <button
-                className="p-1.5 rounded-lg text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139] transition-colors"
-                onClick={() => setAnalysisTraderId(null)}
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    showAnalysisHelp
+                      ? 'text-[#F0B90B] bg-[#F0B90B]/10'
+                      : 'text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139]'
+                  }`}
+                  onClick={() => setShowAnalysisHelp(v => !v)}
+                  aria-label="Help"
+                  title={language === 'zh' ? '使用说明' : 'How to use'}
+                >
+                  <HelpCircle className="h-5 w-5" />
+                </button>
+                <button
+                  className="p-1.5 rounded-lg text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139] transition-colors"
+                  onClick={() => setAnalysisTraderId(null)}
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto p-6">
+              {showAnalysisHelp && (
+                <div className="mb-6 rounded-xl border border-[#F0B90B]/30 bg-[#F0B90B]/5 p-4 text-sm leading-relaxed text-[#B7BDC6] space-y-2">
+                  <div className="font-semibold text-[#F0B90B]">
+                    {language === 'zh' ? '这是什么？' : 'What is this?'}
+                  </div>
+                  {language === 'zh' ? (
+                    <>
+                      <p>· AI 会回顾该交易员最近 <strong className="text-[#EAECEF]">10 笔平仓交易</strong>，生成表现总结、失败模式、改进建议和关键洞察。</p>
+                      <p>· 分析结论会作为参考信息注入<strong className="text-[#EAECEF]">下一轮决策</strong>，帮助 AI 避免重复犯错。</p>
+                      <p>· 需要至少 <strong className="text-[#EAECEF]">10 笔平仓交易</strong>才会生成；模拟盘同样计入。不足时此面板为空，属正常现象。</p>
+                      <p>· 每次生成基于最近的交易窗口，<strong className="text-[#EAECEF]">持续交易</strong>可获得更新的分析结论。</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>· AI reviews this trader&apos;s last <strong className="text-[#EAECEF]">10 closed trades</strong> and produces a performance summary, failure patterns, improvement suggestions and key insights.</p>
+                      <p>· The conclusions are fed into the <strong className="text-[#EAECEF]">next decision cycle</strong> so the AI avoids repeating mistakes.</p>
+                      <p>· Requires at least <strong className="text-[#EAECEF]">10 closed trades</strong> (paper trading counts). The panel stays empty before that — this is normal.</p>
+                      <p>· Each analysis is based on the most recent trade window; <strong className="text-[#EAECEF]">keep trading</strong> to get refreshed conclusions.</p>
+                    </>
+                  )}
+                </div>
+              )}
               <LiveTraderAnalysis traderId={analysisTraderId} />
             </div>
           </div>
