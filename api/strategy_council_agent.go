@@ -210,15 +210,6 @@ func buildTranscriptText(st *councilState) string {
 	return sb.String()
 }
 
-// truncateRunes 按 rune 截断
-func truncateRunes(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n]) + "…(截断)"
-}
-
 // execCouncilTool 执行 Agent 工具调用，返回喂回 prompt 的结果文本
 func (s *Server) execCouncilTool(call map[string]any, lang string) string {
 	name, _ := call["tool"].(string)
