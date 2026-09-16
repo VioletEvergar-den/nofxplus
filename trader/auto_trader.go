@@ -547,7 +547,7 @@ func (at *AutoTrader) Run() error {
 	defer ticker.Stop()
 
 	// Execute immediately on first run
-	if err := at.runCycle(); err != nil {
+	if err := at.runCycleWithRetry(); err != nil {
 		logger.Infof("❌ Execution failed: %v", err)
 	}
 
@@ -565,7 +565,7 @@ func (at *AutoTrader) Run() error {
 
 		select {
 		case <-ticker.C:
-			if err := at.runCycle(); err != nil {
+			if err := at.runCycleWithRetry(); err != nil {
 				logger.Infof("❌ Execution failed: %v", err)
 			}
 
@@ -987,6 +987,32 @@ func (at *AutoTrader) runCycle() error {
 	}
 
 	return nil
+}
+
+// runCycleWithRetry 执行决策周期，失败后最多重试 2 次（间隔 30 秒）。
+// runCycle 仅在"构建交易上下文"和"AI 调用"阶段返回错误（下单阶段失败不返回错误），
+// 因此重试不会导致重复下单；主要用于抵御交易所 API 网络抖动。
+func (at *AutoTrader) runCycleWithRetry() error {
+	const maxRetries = 2
+	const retryDelay = 30 * time.Second
+
+	var err error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			logger.Infof("🔁 [%s] Cycle failed (%v), retrying in %v (attempt %d/%d)...",
+				at.name, err, retryDelay, attempt, maxRetries)
+			select {
+			case <-time.After(retryDelay):
+			case <-at.stopMonitorCh:
+				return err
+			}
+		}
+		err = at.runCycle()
+		if err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // buildTradingContext builds trading context
