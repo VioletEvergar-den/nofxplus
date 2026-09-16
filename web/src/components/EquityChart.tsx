@@ -89,40 +89,8 @@ export const EquityChart = memo(function EquityChart({ traderId }: EquityChartPr
     }
   )
 
-  // Loading state - show skeleton
-  if (isLoading) {
-    return (
-      <div className="binance-card p-3 sm:p-5">
-        <div className="animate-pulse">
-          <div className="skeleton h-64 w-full rounded"></div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="binance-card p-3 sm:p-5">
-        <div
-          className="flex items-center gap-3 p-4 rounded"
-          style={{
-            background: 'rgba(246, 70, 93, 0.1)',
-            border: '1px solid rgba(246, 70, 93, 0.2)',
-          }}
-        >
-          <AlertTriangle className="w-6 h-6" style={{ color: '#F6465D' }} />
-          <div>
-            <div className="font-semibold" style={{ color: '#F6465D' }}>
-              {t('loadingError', language)}
-            </div>
-            <div className="text-sm" style={{ color: '#848E9C' }}>
-              {error.message}
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // ===== Hooks 区：所有 useMemo 必须位于任何条件 return 之前（否则违反 Hooks 规则导致整树崩溃黑屏）=====
+  const MAX_DISPLAY_POINTS = 2000
 
   // 过滤掉无效数据：total_equity为0或小于1的数据点（API失败导致）
   const validHistory = useMemo(
@@ -130,28 +98,7 @@ export const EquityChart = memo(function EquityChart({ traderId }: EquityChartPr
     [history]
   )
 
-  if (!validHistory || validHistory.length === 0) {
-    return (
-      <div className="binance-card p-3 sm:p-5">
-        <h3 className="text-base sm:text-lg font-bold mb-6" style={{ color: '#EAECEF' }}>
-          {t('accountEquityCurve', language)}
-        </h3>
-        <div className="text-center py-16" style={{ color: '#848E9C' }}>
-          <div className="mb-4 flex justify-center opacity-50">
-            <BarChart3 className="w-16 h-16" />
-          </div>
-          <div className="text-lg font-semibold mb-2">
-            {t('noHistoricalData', language)}
-          </div>
-          <div className="text-sm">{t('dataWillAppear', language)}</div>
-        </div>
-      </div>
-    )
-  }
-
   // 限制显示最近的数据点（性能优化）
-  // 如果数据超过2000个点，只显示最近2000个
-  const MAX_DISPLAY_POINTS = 2000
   const displayHistory = useMemo(
     () =>
       validHistory.length > MAX_DISPLAY_POINTS
@@ -188,6 +135,60 @@ export const EquityChart = memo(function EquityChart({ traderId }: EquityChartPr
       }),
     [displayHistory, displayMode, initialBalance]
   )
+
+  // Loading state - show skeleton
+  if (isLoading) {
+    return (
+      <div className="binance-card p-3 sm:p-5">
+        <div className="animate-pulse">
+          <div className="skeleton h-64 w-full rounded"></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="binance-card p-3 sm:p-5">
+        <div
+          className="flex items-center gap-3 p-4 rounded"
+          style={{
+            background: 'rgba(246, 70, 93, 0.1)',
+            border: '1px solid rgba(246, 70, 93, 0.2)',
+          }}
+        >
+          <AlertTriangle className="w-6 h-6" style={{ color: '#F6465D' }} />
+          <div>
+            <div className="font-semibold" style={{ color: '#F6465D' }}>
+              {t('loadingError', language)}
+            </div>
+            <div className="text-sm" style={{ color: '#848E9C' }}>
+              {error.message}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!validHistory || validHistory.length === 0) {
+    return (
+      <div className="binance-card p-3 sm:p-5">
+        <h3 className="text-base sm:text-lg font-bold mb-6" style={{ color: '#EAECEF' }}>
+          {t('accountEquityCurve', language)}
+        </h3>
+        <div className="text-center py-16" style={{ color: '#848E9C' }}>
+          <div className="mb-4 flex justify-center opacity-50">
+            <BarChart3 className="w-16 h-16" />
+          </div>
+          <div className="text-lg font-semibold mb-2">
+            {t('noHistoricalData', language)}
+          </div>
+          <div className="text-sm">{t('dataWillAppear', language)}</div>
+        </div>
+      </div>
+    )
+  }
 
   const currentValue = chartData[chartData.length - 1]
   const isProfit = currentValue.raw_pnl >= 0
