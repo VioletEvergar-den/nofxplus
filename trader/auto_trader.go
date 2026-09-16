@@ -1615,6 +1615,9 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, act
 		logger.Infof("  ⚠ Failed to set take profit: %v", err)
 	}
 
+	// Persist AI-provided SL/TP to the open position record (OrderSync creates the record asynchronously)
+	at.persistInitialSLTP(decision.Symbol, "LONG", decision.StopLoss, decision.TakeProfit)
+
 	return nil
 }
 
@@ -1744,6 +1747,9 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *decision.Decision, ac
 	if err := at.trader.SetTakeProfit(decision.Symbol, "SHORT", quantity, decision.TakeProfit); err != nil {
 		logger.Infof("  ⚠ Failed to set take profit: %v", err)
 	}
+
+	// Persist AI-provided SL/TP to the open position record (OrderSync creates the record asynchronously)
+	at.persistInitialSLTP(decision.Symbol, "SHORT", decision.StopLoss, decision.TakeProfit)
 
 	return nil
 }
@@ -2329,6 +2335,14 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 	// This ensures weighted average entry prices are used when positions are accumulated
 	synced := at.syncEntryPricesWithDatabase(positions)
 
+	// Load AI-provided SL/TP from local position records (keyed by SYMBOL_SIDE)
+	sltpMap := make(map[string][2]float64)
+	if at.store != nil && at.id != "" {
+		if m, err := at.store.Position().GetOpenPositionSLTP(at.id); err == nil {
+			sltpMap = m
+		}
+	}
+
 	var result []map[string]interface{}
 	for _, pos := range synced {
 		symbol := pos["symbol"].(string)
@@ -2353,6 +2367,13 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		// Calculate P&L percentage (based on margin)
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
+		// Resolve SL/TP from local records (exchange side is "short"/"long", DB stores "SHORT"/"LONG")
+		stopLoss, takeProfit := 0.0, 0.0
+		sideKey := strings.ToUpper(side)
+		if v, ok := sltpMap[symbol+"_"+sideKey]; ok {
+			stopLoss, takeProfit = v[0], v[1]
+		}
+
 		result = append(result, map[string]interface{}{
 			"symbol":             symbol,
 			"side":               side,
@@ -2364,6 +2385,8 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 			"unrealized_pnl_pct": pnlPct,
 			"liquidation_price":  liquidationPrice,
 			"margin_used":        marginUsed,
+			"stop_loss":          stopLoss,
+			"take_profit":        takeProfit,
 		})
 	}
 
@@ -3288,6 +3311,46 @@ func getSideFromAction(action string) string {
 	default:
 		return "BUY"
 	}
+}
+
+// persistInitialSLTP 将 AI 决策的止盈止损异步写入持仓记录。
+// 持仓记录由 OrderSync 从交易所成交异步创建，因此这里轮询等待记录出现（最多 120 秒），
+// 找到后写入 initial_* 和 final_* 字段，供前端展示与后续调整追踪。
+func (at *AutoTrader) persistInitialSLTP(symbol, positionSide string, stopLoss, takeProfit float64) {
+	if at.store == nil || at.id == "" {
+		return
+	}
+	if stopLoss <= 0 && takeProfit <= 0 {
+		return
+	}
+
+	go func() {
+		for attempt := 0; attempt < 24; attempt++ {
+			time.Sleep(5 * time.Second)
+
+			openPos, err := at.store.Position().GetOpenPositionBySymbol(at.id, symbol, positionSide)
+			if err != nil {
+				continue
+			}
+			if openPos == nil {
+				continue // Position record not yet created by OrderSync
+			}
+
+			// Skip if position was closed before we persisted
+			if openPos.InitialStopLoss > 0 || openPos.InitialTakeProfit > 0 {
+				return
+			}
+
+			if err := at.store.Position().SetInitialStopLossTakeProfit(openPos.ID, stopLoss, takeProfit); err != nil {
+				logger.Infof("  ⚠️ [%s] Failed to persist SL/TP for %s %s: %v", at.name, symbol, positionSide, err)
+				return
+			}
+			logger.Infof("  📝 [%s] Persisted SL/TP to position record: %s %s SL=%.4f TP=%.4f",
+				at.name, symbol, positionSide, stopLoss, takeProfit)
+			return
+		}
+		logger.Infof("  ⚠️ [%s] Position record for %s %s not found after 120s, SL/TP not persisted", at.name, symbol, positionSide)
+	}()
 }
 
 // AdjustStopLossTakeProfitWithTracking adjusts stop loss and take profit with tracking for P&L accuracy

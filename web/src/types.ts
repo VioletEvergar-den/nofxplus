@@ -38,6 +38,8 @@ export interface Position {
   unrealized_pnl_pct: number
   liquidation_price: number
   margin_used: number
+  stop_loss?: number      // AI 决策设定的止损价（0 = 未设置）
+  take_profit?: number    // AI 决策设定的止盈价（0 = 未设置）
 }
 
 export interface DecisionAction {

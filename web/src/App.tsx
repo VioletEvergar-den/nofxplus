@@ -1373,6 +1373,18 @@ function TraderDetailsPage({
                         </th>
                         <th
                           className="px-1 pb-3 font-semibold text-gray-400 whitespace-nowrap text-right"
+                          title={language === 'zh' ? 'AI 设定的止损价' : 'AI stop loss level'}
+                        >
+                          {language === 'zh' ? '止损价' : 'Stop Loss'}
+                        </th>
+                        <th
+                          className="px-1 pb-3 font-semibold text-gray-400 whitespace-nowrap text-right"
+                          title={language === 'zh' ? 'AI 设定的止盈价' : 'AI take profit level'}
+                        >
+                          {language === 'zh' ? '止盈价' : 'Take Profit'}
+                        </th>
+                        <th
+                          className="px-1 pb-3 font-semibold text-gray-400 whitespace-nowrap text-right"
                           title={t('quantity', language)}
                         >
                           {language === 'zh' ? '数量' : 'Qty'}
@@ -1479,6 +1491,28 @@ function TraderDetailsPage({
                             style={{ color: '#EAECEF' }}
                           >
                             {formatPrice(pos.mark_price)}
+                          </td>
+                          <td
+                            className="px-1 py-3 font-mono whitespace-nowrap text-right"
+                            style={{ color: pos.stop_loss && pos.stop_loss > 0 ? '#F6465D' : '#848E9C' }}
+                            title={
+                              pos.stop_loss && pos.stop_loss > 0
+                                ? language === 'zh' ? '触发后市价平仓止损' : 'Market close on trigger'
+                                : language === 'zh' ? '未设置' : 'Not set'
+                            }
+                          >
+                            {pos.stop_loss && pos.stop_loss > 0 ? formatPrice(pos.stop_loss) : '—'}
+                          </td>
+                          <td
+                            className="px-1 py-3 font-mono whitespace-nowrap text-right"
+                            style={{ color: pos.take_profit && pos.take_profit > 0 ? '#0ECB81' : '#848E9C' }}
+                            title={
+                              pos.take_profit && pos.take_profit > 0
+                                ? language === 'zh' ? '触发后市价平仓止盈' : 'Market close on trigger'
+                                : language === 'zh' ? '未设置' : 'Not set'
+                            }
+                          >
+                            {pos.take_profit && pos.take_profit > 0 ? formatPrice(pos.take_profit) : '—'}
                           </td>
                           <td
                             className="px-1 py-3 font-mono whitespace-nowrap text-right"

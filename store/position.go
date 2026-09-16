@@ -1483,6 +1483,59 @@ func (s *PositionStore) UpdateStopLossTakeProfit(id int64, newStopLoss, newTakeP
 	return nil
 }
 
+// SetInitialStopLossTakeProfit 首次记录持仓的止盈止损（开仓时由 AI 决策提供）。
+// 同时写入 initial_* 和 final_*：initial_* 永久保留原始值，final_* 供展示与后续调整覆盖。
+func (s *PositionStore) SetInitialStopLossTakeProfit(id int64, stopLoss, takeProfit float64) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid position id: %d", id)
+	}
+
+	now := time.Now()
+	_, err := s.db.Exec(`
+		UPDATE trader_positions SET
+			initial_stop_loss = ?,
+			initial_take_profit = ?,
+			final_stop_loss = ?,
+			final_take_profit = ?,
+			updated_at = ?
+		WHERE id = ? AND status = 'OPEN'
+	`, stopLoss, takeProfit, stopLoss, takeProfit, now.Format(time.RFC3339), id)
+
+	if err != nil {
+		return fmt.Errorf("failed to set initial stop loss/take profit: %w", err)
+	}
+
+	return nil
+}
+
+// GetOpenPositionSLTP 获取交易员所有 OPEN 持仓的止盈止损。
+// 返回 map：key 为 "SYMBOL_SIDE"（如 "ETHUSDT_SHORT"），value 为 {止损价, 止盈价}。
+// 专用于持仓展示接口，避免改动共享的 scanPositions 列映射。
+func (s *PositionStore) GetOpenPositionSLTP(traderID string) (map[string][2]float64, error) {
+	rows, err := s.db.Query(`
+		SELECT symbol, side,
+		       COALESCE(final_stop_loss, 0),
+		       COALESCE(final_take_profit, 0)
+		FROM trader_positions
+		WHERE trader_id = ? AND status = 'OPEN'
+	`, traderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query open position SL/TP: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][2]float64)
+	for rows.Next() {
+		var symbol, side string
+		var sl, tp float64
+		if err := rows.Scan(&symbol, &side, &sl, &tp); err != nil {
+			continue
+		}
+		result[symbol+"_"+side] = [2]float64{sl, tp}
+	}
+	return result, rows.Err()
+}
+
 // SyncPositionWithExchange fetches actual execution data from exchange and updates position
 // This ensures P&L is calculated using actual prices, not just the AI-set levels
 func (s *PositionStore) SyncPositionWithExchange(id int64, actualExitPrice float64, actualExitTime time.Time) error {
