@@ -392,7 +392,7 @@ export const EquityChart = memo(function EquityChart({ traderId, embedded = fals
               dataKey="value"
               stroke="url(#colorGradient)"
               strokeWidth={3}
-              isAnimationActive={false}
+              animationDuration={800}
               dot={chartData.length > 50 ? false : { fill: '#F0B90B', r: 3 }}
               activeDot={{
                 r: 6,

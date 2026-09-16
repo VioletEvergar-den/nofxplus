@@ -57,44 +57,39 @@ function ActionCard({ action, language, onSymbolClick }: { action: DecisionActio
         boxShadow: `0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.03)`,
       }}
     >
-      {/* Header Row */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <span className="text-xl">{config.icon}</span>
-          <span
-            className="font-mono font-bold text-lg cursor-pointer transition-all duration-200 hover:scale-110"
-            style={{ color: '#EAECEF' }}
-            onClick={() => onSymbolClick?.(action.symbol)}
-            title="Click to view chart"
-          >
-            {action.symbol.replace('USDT', '')}
-          </span>
-          <span
-            className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
-            style={{ background: config.bg, color: config.color, border: `1px solid ${config.color}55` }}
-          >
-            {config.label}
-          </span>
-        </div>
+      {/* Header Row（置信度与状态紧跟方向徽章，避免宽卡下中间大片留白） */}
+      <div className="flex items-center gap-3 flex-wrap mb-3">
+        <span className="text-xl">{config.icon}</span>
+        <span
+          className="font-mono font-bold text-lg cursor-pointer transition-all duration-200 hover:scale-110"
+          style={{ color: '#EAECEF' }}
+          onClick={() => onSymbolClick?.(action.symbol)}
+          title="Click to view chart"
+        >
+          {action.symbol.replace('USDT', '')}
+        </span>
+        <span
+          className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
+          style={{ background: config.bg, color: config.color, border: `1px solid ${config.color}55` }}
+        >
+          {config.label}
+        </span>
 
-        {/* Status Badge */}
-        <div className="flex items-center gap-2">
-          {action.confidence !== undefined && action.confidence > 0 && (
-            <div
-              className="px-2 py-1 rounded text-xs font-semibold"
-              style={{
-                background: `${getConfidenceColor(action.confidence)}22`,
-                color: getConfidenceColor(action.confidence)
-              }}
-            >
-              {action.confidence.toFixed(0)}%
-            </div>
-          )}
+        {action.confidence !== undefined && action.confidence > 0 && (
           <div
-            className="w-2 h-2 rounded-full"
-            style={{ background: action.success ? '#0ECB81' : '#F6465D' }}
-          />
-        </div>
+            className="px-2 py-1 rounded text-xs font-semibold"
+            style={{
+              background: `${getConfidenceColor(action.confidence)}22`,
+              color: getConfidenceColor(action.confidence)
+            }}
+          >
+            {action.confidence.toFixed(0)}%
+          </div>
+        )}
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ background: action.success ? '#0ECB81' : '#F6465D' }}
+        />
       </div>
 
       {/* Trading Details Grid */}
