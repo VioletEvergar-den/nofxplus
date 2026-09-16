@@ -52,10 +52,21 @@ const councilAskProtocol = `
 合法 target: intel_analyst / chief_trader / strategy_architect / risk_reviewer（不能是自己）。系统会把问题转给对方作答，回答会进入圆桌记录回到你。`
 
 // councilAgentSystemPrompt Agent 角色系统提示词
-func councilAgentSystemPrompt(role councilRoleDef, lang string, capital float64, promptStyle string) string {
+// nativeTools: 模型走原生 function calling 时，指引改为「直接调用工具」，文本协议块另行拼接
+func councilAgentSystemPrompt(role councilRoleDef, lang string, capital float64, promptStyle string, nativeTools bool) string {
 	summaryLang := "中文"
 	if lang == "en" {
 		summaryLang = "English"
+	}
+	isDataRole := role.ID == "intel_analyst" || role.ID == "chief_trader" || role.ID == "strategy_architect"
+	var toolCallInstruction string
+	switch {
+	case isDataRole && nativeTools:
+		toolCallInstruction = "- 需要数据时直接调用系统提供的工具（原生 function calling），系统会把执行结果回传给你继续分析，不要手写工具代码块。"
+	case isDataRole:
+		toolCallInstruction = "- 需要数据时先输出工具代码块（严格按下方工具协议格式）；系统执行后把结果回传给你继续分析。"
+	default:
+		toolCallInstruction = "- 你没有工具调用权限；对前序发言有数据疑问时，输出 ask 代码块点名追问（严格按下方追问协议格式）。"
 	}
 	capitalSection := "用户未单独填写本金规模；若策略意图中提到资金（如「只有 10U」「500U」），以该表述为准并严格执行下方可开仓校验。"
 	if capital > 0 {
@@ -80,8 +91,8 @@ func councilAgentSystemPrompt(role councilRoleDef, lang string, capital float64,
 - summary 和 concerns 用 %s。
 - payload 字段名和枚举值必须严格使用下方给定的英文值。
 - 对上游结论有不同意见必须写入 concerns，供风控评审官裁决。
-- 需要数据时先输出工具代码块；需要追问时输出 ask 代码块；然后系统会回传结果。
-`, role.Emoji, roleDisplayName(role.ID, lang), capitalSection, envelopeSchemaHint, summaryLang)
+%s
+`, role.Emoji, roleDisplayName(role.ID, lang), capitalSection, envelopeSchemaHint, summaryLang, toolCallInstruction)
 
 	switch role.ID {
 	case "intel_analyst":
@@ -557,6 +568,8 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 	askUsed := false
 	// 模型已通过能力检测（tool_call）时走原生 function calling，否则回退文本协议
 	nativeTools := s.councilNativeToolCalling(st.UserID, modelID)
+	// 数据型角色才有工具权限：情报分析师/交易员/架构师
+	canTool := roleID == "intel_analyst" || roleID == "chief_trader" || roleID == "strategy_architect"
 
 	for turn := 0; turn < 10; turn++ {
 		if st.cancelFlag.Load() {
@@ -584,7 +597,13 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		}
 
 		atomic.AddInt32(&st.UsedBudget, 1)
-		sysP := councilAgentSystemPrompt(role, st.Language, st.Capital, st.PromptStyle)
+		sysP := councilAgentSystemPrompt(role, st.Language, st.Capital, st.PromptStyle, nativeTools)
+		if !nativeTools && canTool {
+			// 文本协议回退模式：必须给出工具调用格式说明，否则模型不知道怎么发起工具调用
+			sysP += councilToolProtocol
+		}
+		// 追问机制不是原生工具，两种模式下都用文本协议
+		sysP += councilAskProtocol
 		var resp string
 		var err error
 		if nativeTools {
@@ -603,7 +622,6 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		}
 
 		// 1) 工具调用（仅数据型角色：情报分析师/交易员/架构师）
-		canTool := roleID == "intel_analyst" || roleID == "chief_trader" || roleID == "strategy_architect"
 		if calls := parseToolCalls(resp); len(calls) > 0 && canTool && toolUses < 4 && remain > 2 {
 			for _, c := range calls {
 				toolName, _ := c["tool"].(string)
@@ -647,7 +665,7 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 					if remainingBudget(st) > 0 {
 						atomic.AddInt32(&st.UsedBudget, 1)
 						ansPrompt := fmt.Sprintf("## 用户意图\n%s\n\n## 圆桌发言记录\n%s\n## 提问\n%s %s 向你提问：%s\n\n请直接作答：输出信封 JSON，summary 为你的圆桌回应内容，payload 填空对象 {} 即可。", st.Intent, buildTranscriptText(st), role.Emoji, askerName, ask.Question)
-						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language, st.Capital, st.PromptStyle), ansPrompt)
+						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language, st.Capital, st.PromptStyle, false), ansPrompt)
 						if err2 == nil {
 							env2, errP := parseEnvelope(resp2)
 							if errP != nil {

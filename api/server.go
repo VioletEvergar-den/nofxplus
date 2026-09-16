@@ -1888,8 +1888,8 @@ func (s *Server) handleProbeModelCapabilities(c *gin.Context) {
 		ToolChoice: "auto",
 	}
 	if resp, err := client.CallWithRequest(probeReq); err == nil {
-		// mcp 层会把原生 tool_calls 桥接为文本协议代码块
-		if strings.Contains(resp, "```tool") || strings.Contains(resp, `"tool"`) {
+		// mcp 层会把原生 tool_calls 桥接为文本协议代码块；只认工具块，避免误判
+		if strings.Contains(resp, "```tool") {
 			caps["tool_call"] = true
 		}
 	}
