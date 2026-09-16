@@ -113,6 +113,13 @@ function truncateAddress(address: string, startLen = 6, endLen = 4): string {
   return `${address.slice(0, startLen)}...${address.slice(-endLen)}`
 }
 
+// 智能价格小数位：>=100 显示 2 位，1~100 显示 4 位，<1 显示 6 位
+function formatPrice(price: number): string {
+  if (price >= 100) return price.toFixed(2)
+  if (price >= 1) return price.toFixed(4)
+  return price.toFixed(6)
+}
+
 function App() {
   const { language, setLanguage } = useLanguage()
   const { user, token, logout, isLoading } = useAuth()
@@ -1465,13 +1472,13 @@ function TraderDetailsPage({
                             className="px-1 py-3 font-mono whitespace-nowrap text-right"
                             style={{ color: '#EAECEF' }}
                           >
-                            {pos.entry_price.toFixed(4)}
+                            {formatPrice(pos.entry_price)}
                           </td>
                           <td
                             className="px-1 py-3 font-mono whitespace-nowrap text-right"
                             style={{ color: '#EAECEF' }}
                           >
-                            {pos.mark_price.toFixed(4)}
+                            {formatPrice(pos.mark_price)}
                           </td>
                           <td
                             className="px-1 py-3 font-mono whitespace-nowrap text-right"
@@ -1507,7 +1514,7 @@ function TraderDetailsPage({
                             className="px-1 py-3 font-mono whitespace-nowrap text-right"
                             style={{ color: '#848E9C' }}
                           >
-                            {pos.liquidation_price.toFixed(4)}
+                            {formatPrice(pos.liquidation_price)}
                           </td>
                         </tr>
                       ))}
