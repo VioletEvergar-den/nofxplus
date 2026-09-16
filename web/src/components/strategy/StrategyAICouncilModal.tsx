@@ -254,6 +254,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
   const [starting, setStarting] = useState(false)
   const [agentBudget, setAgentBudget] = useState(12)
   const [capital, setCapital] = useState('')
+  const [promptStyle, setPromptStyle] = useState<'auto' | 'concise' | 'balanced' | 'detailed'>('auto')
   const [creating, setCreating] = useState(false)
   const [mode, setMode] = useState<'generate' | 'modify'>(currentConfig ? 'modify' : 'generate')
   // running 步骤的本地起始时间（role → 时间戳），用于显示已用时长
@@ -373,6 +374,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
           mode,
           agent_budget: agentBudget,
           capital: capital.trim() ? Number(capital) : 0,
+          prompt_style: promptStyle,
           config: mode === 'modify' ? currentConfig : undefined,
         }),
       })
@@ -515,6 +517,29 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
                     className="w-full px-3.5 py-3 rounded-xl text-[12px] leading-relaxed text-[#EAECEF] placeholder-[#5C6470] resize-y focus:outline-none focus:border-amber-500/50"
                     style={{ background: '#1E2329', border: '1px solid #2B3139' }}
                   />
+                </div>
+
+                {/* 提示词风格 */}
+                <div>
+                  <label className="block text-[11px] text-[#848E9C] mb-1.5">{t('aiCouncil.styleLabel', language)}</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(['auto', 'concise', 'balanced', 'detailed'] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setPromptStyle(s)}
+                        title={t(`aiCouncil.styleHint.${s}`, language)}
+                        className={`px-2 py-1.5 rounded-lg text-[11px] transition-all ${
+                          promptStyle === s
+                            ? 'bg-amber-500/15 text-amber-400 font-medium border border-amber-500/50'
+                            : 'text-[#848E9C] hover:text-[#EAECEF] border border-[#2B3139]'
+                        }`}
+                        style={promptStyle === s ? undefined : { background: '#1E2329' }}
+                      >
+                        {t(`aiCouncil.styleOption.${s}`, language)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-[#5C6470] mt-1 leading-tight">{t(`aiCouncil.styleHint.${promptStyle}`, language)}</p>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">

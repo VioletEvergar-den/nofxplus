@@ -44,7 +44,7 @@ const councilAskProtocol = `
 合法 target: intel_analyst / chief_trader / strategy_architect。系统会把问题转给对方在圆桌作答后回到你。`
 
 // councilAgentSystemPrompt Agent 角色系统提示词
-func councilAgentSystemPrompt(role councilRoleDef, lang string, capital float64) string {
+func councilAgentSystemPrompt(role councilRoleDef, lang string, capital float64, promptStyle string) string {
 	summaryLang := "中文"
 	if lang == "en" {
 		summaryLang = "English"
@@ -147,28 +147,64 @@ payload 字段：
 	case "prompt_writer":
 		return base + `
 ## 你的任务（首席策略撰写官）
-你是专家团的首席笔杆子：基于全部圆桌发言（交易计划/参数配置/终审裁决），为交易系统撰写一套完整、可执行的 System Prompt 策略。这份提示词将直接作为 AI 交易员的行为准则，质量标准是「拿来即可实盘」。
-
-写作要求（必须遵守）：
-1. 风格对标真实实战策略提示词：有清晰的人设身份与方法论体系（如维科夫+SMC+缠论融合、马丁网格、动量突破等，依据策略意图选定）、具体的入场信号条件、明确的执行规则、逐条列出的禁忌清单。
-2. 必须具体可执行：写明明确的交易执行数字——信心分阈值、止损止盈距离或结构位规则、分批加减仓规则、持仓时长预期、移动止损规则等。拒绝空泛套话（如"注意风险""谨慎交易"这类没有操作含义的句子）。
-3. 严禁写死与参数配置冲突的系统硬约束：最大同时持仓数、交易所杠杆上限、保证金使用率、单仓价值比例等由程序动态注入，提示词中不要重复定义这些全局数字。
-4. 四段结构：
-   - role_definition（角色定义）：人设身份 + 方法论体系 + 核心目标。核心目标必须包含：最大化夏普比率（平均回报/回报波动），纪律优先于利润。
-   - trading_frequency（交易频率理念）：多久评估交易一次、什么情况必须空仓等待、持仓周期预期（按策略类型给具体时长范围）。
-   - entry_standards（入场标准）：具体的信号组合条件（形态/指标/资金流/结构位满足什么才允许进场）、分批建仓规则、明确列出禁止入场的情形。
-   - decision_process（决策流程）：从「检查现有持仓（止盈止损判断）→ 分析候选币种 → 输出决策」的完整步骤，含每步的执行纪律与思维链要求。
-5. custom_prompt（可选）：额外的禁忌清单、风格化要求或特色纪律；没有则输出空字符串 ""。
-6. 全文用 {{LANG}} 书写，语气坚定、指令明确、面向执行者。
+你是专家团的首席笔杆子：基于全部圆桌发言（交易计划/参数配置/终审裁决），为交易系统撰写 System Prompt 策略。这份提示词将直接作为 AI 交易员的行为准则。
+` + writerStyleInstruction(promptStyle) + `
+通用要求：
+- 严禁写死与参数配置冲突的系统硬约束（最大持仓数、杠杆上限、保证金率等由程序注入），提示词不要重复定义。
+- custom_prompt（可选）：额外禁忌或特色纪律；没有则输出空字符串 ""。
+- 全文用 {{LANG}} 书写，语气坚定、面向执行者。
 
 payload 字段：
-- strategy_name: string，为这套策略取一个简短有力的名字（4~12字，贴合策略风格与方法论，如「ETH 多周期共振短线」「趋势猎手·分批建仓」，禁止叫「策略A」这类无意义名字；用户语言为英文时取英文名）
+- strategy_name: string，为这套策略取一个简短有力的名字（4~12字，贴合策略风格与方法论，禁止叫「策略A」这类无意义名字；用户语言为英文时取英文名）
 - strategy_description: string，一句话策略简介（30字内）
 - prompt_sections: {"role_definition": string, "trading_frequency": string, "entry_standards": string, "decision_process": string}（四段均必填）
 - custom_prompt: string（可为 ""）
 - style_note: 一句话说明本策略的风格定位与目标行情`
 	}
 	return base
+}
+
+// writerStyleInstruction 按用户选择的提示词风格返回撰写要求
+func writerStyleInstruction(style string) string {
+	switch style {
+	case "concise":
+		return `
+## 写作风格：简洁（用户指定，必须严格遵守）
+老手实战风格——每段只写 1~2 句话，四段合计不超过 80 字：
+- role_definition：一句话人设身份（如「你是一个专业的加密货币优质资产配置员」）
+- trading_frequency：一句话频率理念（如「不要频繁交易，做资产配置」）
+- entry_standards：一句话核心标准（如「认真评估后决策，没把握就不开仓」）
+- decision_process：一句话流程（如「输出结构化JSON，严格执行止损」）
+抓核心人设与理念即可，不列条件组合、不写执行数字、不堆约束。`
+	case "balanced":
+		return `
+## 写作风格：均衡（用户指定）
+四段结构齐全，每段 2~4 句话：
+- role_definition：人设身份 + 核心方法论（一句话点到即可）
+- trading_frequency：评估频率 + 空仓条件 + 持仓周期预期
+- entry_standards：2~3 条核心入场信号 + 最关键的禁入情形
+- decision_process：简明决策步骤（查持仓→看候选→出决策）
+保留关键执行纪律，但不逐条罗列完整禁忌清单与全部执行数字。`
+	case "detailed":
+		return `
+## 写作风格：详细（用户指定）
+风格对标真实实战策略提示词，质量标准是「拿来即可实盘」：
+1. 有清晰的人设身份与方法论体系（如维科夫+SMC+缠论融合、马丁网格、动量突破等，依据策略意图选定）、具体的入场信号条件、明确的执行规则。
+2. 必须具体可执行：写明明确的交易执行数字——信心分阈值、止损止盈距离或结构位规则、分批加减仓规则、持仓时长预期、移动止损规则等。拒绝空泛套话（如"注意风险""谨慎交易"这类没有操作含义的句子）。
+3. 四段结构：
+   - role_definition（角色定义）：人设身份 + 方法论体系 + 核心目标。核心目标必须包含：最大化夏普比率（平均回报/回报波动），纪律优先于利润。
+   - trading_frequency（交易频率理念）：多久评估交易一次、什么情况必须空仓等待、持仓周期预期（按策略类型给具体时长范围）。
+   - entry_standards（入场标准）：具体的信号组合条件（形态/指标/资金流/结构位满足什么才允许进场）、分批建仓规则、明确列出禁止入场的情形。
+   - decision_process（决策流程）：从「检查现有持仓（止盈止损判断）→ 分析候选币种 → 输出决策」的完整步骤，含每步的执行纪律与思维链要求。`
+	default: // auto
+		return `
+## 写作风格：自动（由你判断）
+根据策略类型与圆桌讨论的深度，自行决定提示词的复杂度：
+- 简单风格（配置型/趋势持有/纯理念型）：每段 1~2 句话，抓核心人设与理念即可，不堆约束。
+- 均衡风格（常规波段/日内）：每段 2~4 句话，保留关键入场信号与执行纪律。
+- 详细风格（马丁网格/多信号共振/需要严格纪律的复杂体系）：完整的四段结构，含具体执行数字与规则，拒绝空泛套话。
+在 style_note 里用一句话说明你选择的复杂度和理由。`
+	}
 }
 
 // addTranscript 追加圆桌发言记录（并发安全）
@@ -395,7 +431,7 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		}
 
 		atomic.AddInt32(&st.UsedBudget, 1)
-		resp, err := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(role, st.Language, st.Capital), sb.String())
+		resp, err := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(role, st.Language, st.Capital, st.PromptStyle), sb.String())
 		if err != nil {
 			st.mu.Lock()
 			step.Status = string(councilStepFailed)
@@ -448,7 +484,7 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 					if remainingBudget(st) > 0 {
 						atomic.AddInt32(&st.UsedBudget, 1)
 						ansPrompt := fmt.Sprintf("## 用户意图\n%s\n\n## 圆桌发言记录\n%s\n## 追问\n风控评审官向你提问：%s\n\n请直接作答：输出信封 JSON，summary 为你的圆桌回应内容，payload 填空对象 {} 即可。", st.Intent, buildTranscriptText(st), ask.Question)
-						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language, st.Capital), ansPrompt)
+						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language, st.Capital, st.PromptStyle), ansPrompt)
 						if err2 == nil {
 							env2, errP := parseEnvelope(resp2)
 							if errP != nil {
@@ -668,7 +704,8 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 		if remainingBudget(st) <= 0 {
 			break
 		}
-		instr := "请先点名引用交易员与架构师的核心观点（赞同什么、规避什么），再基于全部圆桌发言撰写完整的 System Prompt 策略（四段结构），并为策略取名。"
+		styleName := map[string]string{"concise": "简洁", "balanced": "均衡", "detailed": "详细", "auto": "自动（由你判断复杂度）"}[st.PromptStyle]
+		instr := "请先点名引用交易员与架构师的核心观点（赞同什么、规避什么），再基于全部圆桌发言撰写完整的 System Prompt 策略（四段结构），并为策略取名。写作风格必须采用「" + styleName + "」。"
 		if reasoning != "" {
 			instr += "\n终审裁决参考: " + truncateRunes(reasoning, 600)
 		}
@@ -682,7 +719,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 			clampWarnings = append(clampWarnings, "提示词撰写失败，已保留原提示词: "+err.Error())
 			break
 		}
-		secs, verrs := extractWriterSections(envWriter.Payload)
+		secs, verrs := extractWriterSections(envWriter.Payload, st.PromptStyle)
 		if len(verrs) == 0 {
 			base.PromptSections.RoleDefinition = secs["role_definition"]
 			base.PromptSections.TradingFrequency = secs["trading_frequency"]

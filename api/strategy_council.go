@@ -83,6 +83,7 @@ type councilState struct {
 	Language   string              `json:"language"`
 	SearchOn   bool                `json:"search_on"`
 	Capital    float64             `json:"capital,omitempty"` // 用户本金（USDT），用于可开仓校验
+	PromptStyle string             `json:"prompt_style,omitempty"` // 提示词风格：auto|concise|balanced|detailed
 	Budget     int                 `json:"budget"`      // Agent 全场调用总预算（用户可设）
 	UsedBudget int32               `json:"used_budget"` // 已消耗调用次数（atomic）
 	Steps      []*councilStep      `json:"steps"`
@@ -423,7 +424,7 @@ payload 字段：
 
 // extractWriterSections 从撰写官 payload 中提取并校验 System Prompt 四段
 // 返回 (四段文本map, 错误列表)；错误非空表示需要打回重写
-func extractWriterSections(payload map[string]any) (map[string]string, []string) {
+func extractWriterSections(payload map[string]any, style string) (map[string]string, []string) {
 	var errs []string
 	raw, ok := payload["prompt_sections"].(map[string]any)
 	if !ok {
@@ -438,17 +439,29 @@ func extractWriterSections(payload map[string]any) (map[string]string, []string)
 	entry := get("entry_standards")
 	process := get("decision_process")
 
-	if len([]rune(role)) < 60 {
-		errs = append(errs, "role_definition 过短（至少 60 字，需含人设与方法论体系）")
-	}
-	if len([]rune(freq)) < 30 {
-		errs = append(errs, "trading_frequency 过短（至少 30 字）")
-	}
-	if len([]rune(entry)) < 80 {
-		errs = append(errs, "entry_standards 过短（至少 80 字，需含具体信号条件与禁止入场情形）")
-	}
-	if len([]rune(process)) < 40 {
-		errs = append(errs, "decision_process 过短（至少 40 字，需含完整决策步骤）")
+	// 简洁/均衡/自动风格：只校验非空；详细风格保留最短长度门槛
+	if style == "detailed" {
+		if len([]rune(role)) < 60 {
+			errs = append(errs, "role_definition 过短（至少 60 字，需含人设与方法论体系）")
+		}
+		if len([]rune(freq)) < 30 {
+			errs = append(errs, "trading_frequency 过短（至少 30 字）")
+		}
+		if len([]rune(entry)) < 80 {
+			errs = append(errs, "entry_standards 过短（至少 80 字，需含具体信号条件与禁止入场情形）")
+		}
+		if len([]rune(process)) < 40 {
+			errs = append(errs, "decision_process 过短（至少 40 字，需含完整决策步骤）")
+		}
+	} else {
+		for name, txt := range map[string]string{
+			"role_definition": role, "trading_frequency": freq,
+			"entry_standards": entry, "decision_process": process,
+		} {
+			if len([]rune(txt)) < 4 {
+				errs = append(errs, name+" 为空或过短")
+			}
+		}
 	}
 	for name, txt := range map[string]string{
 		"role_definition": role, "trading_frequency": freq,
@@ -1202,7 +1215,7 @@ func (s *Server) runCouncil(st *councilState, modelID string, base *store.Strate
 			clampWarnings = append(clampWarnings, "提示词撰写失败，已保留原提示词: "+err.Error())
 			break
 		}
-		secs, verrs := extractWriterSections(envWriter.Payload)
+		secs, verrs := extractWriterSections(envWriter.Payload, "detailed")
 		if len(verrs) == 0 {
 			base.PromptSections.RoleDefinition = secs["role_definition"]
 			base.PromptSections.TradingFrequency = secs["trading_frequency"]
@@ -1262,6 +1275,7 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 		Config       *store.StrategyConfig `json:"config"`
 		AgentBudget  int                  `json:"agent_budget"` // Agent 全场调用总预算（5~200，默认12）
 		Capital      float64              `json:"capital"`      // 用户本金（USDT，选填），用于可开仓校验
+		PromptStyle  string               `json:"prompt_style"` // 提示词风格：auto|concise|balanced|detailed（默认auto）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
@@ -1280,6 +1294,12 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 	if req.Mode == "modify" && req.Config == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "修改模式需要提供当前策略配置"})
 		return
+	}
+	switch req.PromptStyle {
+	case "concise", "balanced", "detailed":
+		// 合法
+	default:
+		req.PromptStyle = "auto"
 	}
 
 	// 校验模型可用性
@@ -1322,6 +1342,7 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 		Language:  req.Language,
 		SearchOn:  getSearxngURL() != "",
 		Capital:   req.Capital,
+		PromptStyle: req.PromptStyle,
 		Budget:    budget,
 		Steps:     make([]*councilStep, 0, len(councilRoles)),
 		Transcript: make([]councilTranscriptEntry, 0),
