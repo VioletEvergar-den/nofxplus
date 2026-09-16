@@ -325,6 +325,16 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
     [token, stopPolling, applyCouncilData]
   )
 
+  // 弹窗打开时锁定 body 滚动（防止滚轮穿透到后面的页面）
+  useEffect(() => {
+    if (!open) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [open])
+
   // 弹窗关闭时停止轮询
   useEffect(() => {
     if (!open) {

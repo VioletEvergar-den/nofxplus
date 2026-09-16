@@ -460,11 +460,30 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		// 3) 信封解析
 		env, errP := parseEnvelope(resp)
 		if errP != nil {
-				// 格式错误：给一次重试机会
-				if turn < 8 {
-					st.addTranscript("system", "⚠️", "System", "system", "输出格式错误（"+errP.Error()+"），请立即重新输出信封 JSON。", nil)
-					continue
+			// 降级兜底：非关键角色（非终稿/非撰写）的直接把文字结论当作 summary，避免格式问题反复烧预算
+			// 关键角色（风控评审官/撰写官）必须有结构化 payload，仍走重试
+			cleanResp := strings.TrimSpace(reToolBlock.ReplaceAllString(resp, ""))
+			cleanResp = strings.TrimSpace(reAskBlock.ReplaceAllString(cleanResp, ""))
+			if roleID != "risk_reviewer" && roleID != "prompt_writer" && len([]rune(cleanResp)) > 30 {
+				env = &councilEnvelope{
+					Summary:  truncateRunes(cleanResp, 1500),
+					Payload:  map[string]any{},
+					Concerns: []string{},
 				}
+				errP = nil
+			}
+		}
+		if errP != nil {
+			// 格式错误：给一次重试机会（提示带原因，帮 AI 自纠）
+			if turn < 8 {
+				retryMsg := "输出格式错误（" + errP.Error() + "）"
+				if len(parseToolCalls(resp)) > 0 && (!canTool || toolUses >= 4 || remain <= 2) {
+					retryMsg += "：你输出的工具代码块不会被执行（次数已用尽或无工具权限），不要再输出工具块"
+				}
+				retryMsg += "，请立即只输出最终信封 JSON（以 { 开头 } 结尾），不要输出任何其他文字或代码块。"
+				st.addTranscript("system", "⚠️", "System", "system", retryMsg, nil)
+				continue
+			}
 			st.mu.Lock()
 			step.Status = string(councilStepFailed)
 			step.Error = errP.Error()
