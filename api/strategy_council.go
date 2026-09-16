@@ -65,6 +65,8 @@ type councilTranscriptEntry struct {
 // councilFinalResult 会诊最终结果
 type councilFinalResult struct {
 	Config                 *store.StrategyConfig `json:"config"`
+	StrategyName           string                `json:"strategy_name,omitempty"`           // 撰写官为策略取的名字
+	StrategyDescription    string                `json:"strategy_description,omitempty"`    // 一句话简介
 	ScanIntervalSuggestion int                   `json:"scan_interval_suggestion"`
 	Reasoning              string                `json:"reasoning"`
 	ClampWarnings          []string              `json:"clamp_warnings"`
@@ -166,11 +168,44 @@ func extractJSONBlock(text string) (string, bool) {
 			}
 		}
 	}
-	// 裸 JSON：第一个 { 到最后一个 }
+	// 裸 JSON：用括号配对提取第一个平衡的 JSON 对象（容忍前后夹杂文字/代码块围栏）
+	return extractBalancedJSON(text)
+}
+
+// extractBalancedJSON 从文本中提取第一个括号配对完整的 JSON 对象（考虑字符串转义）
+func extractBalancedJSON(text string) (string, bool) {
 	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start >= 0 && end > start {
-		return text[start : end+1], true
+	if start < 0 {
+		return "", false
+	}
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(text); i++ {
+		c := text[i]
+		if esc {
+			esc = false
+			continue
+		}
+		if inStr {
+			if c == '\\' {
+				esc = true
+			} else if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return text[start : i+1], true
+			}
+		}
 	}
 	return "", false
 }
@@ -1273,8 +1308,8 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 	if budget < 5 {
 		budget = 5
 	}
-	if budget > 40 {
-		budget = 40
+	if budget > 200 {
+		budget = 200
 	}
 	st := &councilState{
 		ID:        id,

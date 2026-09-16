@@ -48,6 +48,8 @@ interface CouncilState {
   transcript?: TranscriptEntry[]
   result?: {
     config: StrategyConfig
+    strategy_name?: string
+    strategy_description?: string
     scan_interval_suggestion: number
     reasoning: string
     clamp_warnings: string[]
@@ -60,6 +62,7 @@ interface StrategyAICouncilModalProps {
   open: boolean
   onClose: () => void
   onApply: (config: StrategyConfig) => void
+  onCreateStrategy?: (name: string, description: string, config: StrategyConfig) => Promise<boolean>
   aiModels: AIModel[]
   defaultModelId: string
   currentConfig: StrategyConfig | null
@@ -240,7 +243,7 @@ function TranscriptItem({ entry, lang }: { entry: TranscriptEntry; lang: Languag
 }
 
 // ---------- 主组件 ----------
-export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defaultModelId, currentConfig }: StrategyAICouncilModalProps) {
+export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrategy, aiModels, defaultModelId, currentConfig }: StrategyAICouncilModalProps) {
   const { token } = useAuth()
   const { language } = useLanguage()
   const [intent, setIntent] = useState('')
@@ -250,6 +253,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
   const [applied, setApplied] = useState(false)
   const [starting, setStarting] = useState(false)
   const [agentBudget, setAgentBudget] = useState(12)
+  const [creating, setCreating] = useState(false)
   const [mode, setMode] = useState<'generate' | 'modify'>(currentConfig ? 'modify' : 'generate')
   // running 步骤的本地起始时间（role → 时间戳），用于显示已用时长
   const stepStartRef = useRef<Map<string, number>>(new Map())
@@ -401,6 +405,19 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
     }
   }
 
+  // 生成模式：用 AI 取的名字直接创建新策略到左侧列表
+  const handleAddToList = async () => {
+    if (!council?.result?.config || !onCreateStrategy) return
+    setCreating(true)
+    try {
+      const name = council.result.strategy_name || (language === 'zh' ? 'AI 专家团策略' : 'AI Council Strategy')
+      const ok = await onCreateStrategy(name, council.result.strategy_description || '', council.result.config)
+      if (ok) setApplied(true)
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const backToForm = () => {
     stopPolling()
     setCouncil(null)
@@ -523,9 +540,9 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                       <input
                         type="number"
                         min={5}
-                        max={40}
+                        max={200}
                         value={agentBudget}
-                        onChange={(e) => setAgentBudget(Math.max(5, Math.min(40, Number(e.target.value) || 12)))}
+                        onChange={(e) => setAgentBudget(Math.max(5, Math.min(200, Number(e.target.value) || 12)))}
                         className="w-20 px-3 py-2 rounded-lg text-[12px] text-[#EAECEF] focus:outline-none focus:border-amber-500/50"
                         style={{ background: '#1E2329', border: '1px solid #2B3139' }}
                       />
@@ -689,6 +706,17 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                       <span className="text-[13px] font-semibold text-[#EAECEF]">{t('aiCouncil.resultTitle', language)}</span>
                     </div>
 
+                    {/* AI 取的策略名（生成模式显眼展示） */}
+                    {council.result.strategy_name && (
+                      <div className="rounded-lg px-3 py-2.5" style={{ background: 'rgba(240,185,11,0.07)', border: '1px solid rgba(240,185,11,0.35)' }}>
+                        <div className="text-[9px] uppercase tracking-wider text-amber-400/70 mb-0.5">{t('aiCouncil.aiNamed', language)}</div>
+                        <div className="text-[15px] font-bold text-amber-400 leading-snug break-words">{council.result.strategy_name}</div>
+                        {council.result.strategy_description && (
+                          <p className="text-[10px] text-[#848E9C] mt-1 leading-relaxed">{council.result.strategy_description}</p>
+                        )}
+                      </div>
+                    )}
+
                     {council.result.reasoning && (
                       <div>
                         <div className="text-[10px] text-[#848E9C] mb-1">{t('aiCouncil.reasoning', language)}</div>
@@ -732,15 +760,28 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                       </div>
                     )}
 
-                    <button
-                      onClick={handleApply}
-                      disabled={applied}
-                      className={`w-full py-2 rounded-lg text-[12px] font-medium transition-all ${
-                        applied ? 'bg-[#0ECB81]/15 text-[#0ECB81]' : 'bg-gradient-to-r from-amber-400 to-amber-500 text-[#16181C] hover:opacity-90'
-                      }`}
-                    >
-                      {applied ? t('aiCouncil.applied', language) : t('aiCouncil.apply', language)}
-                    </button>
+                    {council.mode === 'generate' && onCreateStrategy ? (
+                      <button
+                        onClick={handleAddToList}
+                        disabled={applied || creating}
+                        className={`w-full py-2 rounded-lg text-[12px] font-medium transition-all flex items-center justify-center gap-1.5 ${
+                          applied ? 'bg-[#0ECB81]/15 text-[#0ECB81]' : 'bg-gradient-to-r from-amber-400 to-amber-500 text-[#16181C] hover:opacity-90'
+                        }`}
+                      >
+                        {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : applied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <FileCheck className="w-3.5 h-3.5" />}
+                        {applied ? t('aiCouncil.addedToList', language) : t('aiCouncil.addToList', language)}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleApply}
+                        disabled={applied}
+                        className={`w-full py-2 rounded-lg text-[12px] font-medium transition-all ${
+                          applied ? 'bg-[#0ECB81]/15 text-[#0ECB81]' : 'bg-gradient-to-r from-amber-400 to-amber-500 text-[#16181C] hover:opacity-90'
+                        }`}
+                      >
+                        {applied ? t('aiCouncil.applied', language) : t('aiCouncil.apply', language)}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

@@ -18,12 +18,13 @@ import (
 // 角色可自主调用工具（K线/新闻），风控评审官可点名追问；
 // 全场 AI 调用受用户设定的总预算约束，每次发言注入剩余预算。
 
-var reToolBlock = regexp.MustCompile("(?s)```tool\\s*(\\{.*?\\})\\s*```")
-var reAskBlock = regexp.MustCompile("(?s)```ask\\s*(\\{.*?\\})\\s*```")
+var reToolBlock = regexp.MustCompile("(?s)```(?:tool|json)?\\s*(\\{.*?\\})\\s*```")
+var reAskBlock = regexp.MustCompile("(?s)```(?:ask|json)?\\s*(\\{.*?\\})\\s*```")
 
 const councilToolProtocol = `
 ## 工具（可自主调用，数据由系统实时拉取）
 需要数据时输出一个独立代码块（格式如下），系统执行后把结果回传给你继续分析：
+注意：围栏必须是 tool（不是 json），参数直接放顶层（不要包 args）。
 ` + "```tool" + `
 {"tool": "get_klines", "symbol": "ETHUSDT", "interval": "4h", "limit": 60}
 ` + "```" + `
@@ -48,7 +49,11 @@ func councilAgentSystemPrompt(role councilRoleDef, lang string) string {
 	if lang == "en" {
 		summaryLang = "English"
 	}
-	base := fmt.Sprintf(`你是 NOFX 量化交易系统「策略专家团」成员：%s%s（Agent 模式）。团队围绕用户策略意图圆桌协作，按顺序发言，所有前序发言在「圆桌发言记录」中全量可见——引用或反驳他人观点时请点名。
+	base := fmt.Sprintf(`你是 NOFX 量化交易系统「策略专家团」成员：%s%s（Agent 模式）。团队围绕用户策略意图圆桌协作，按顺序发言，所有前序发言在「圆桌发言记录」中全量可见。
+
+## 圆桌礼仪（必须遵守）
+- 发言开头必须先点评前序专家：点名引用其观点（如「🎯 首席合约交易员认为…」），明确表态赞同或反驳并给出理由，不许无视前序发言自说自话。
+- 发现前序结论与数据矛盾时必须当面指出，这是你的职责。
 
 ## 输出要求（严格遵守）
 最终结论只输出一个 JSON 对象（信封格式），不要输出任何其他文字：
@@ -147,6 +152,8 @@ payload 字段：
 6. 全文用 {{LANG}} 书写，语气坚定、指令明确、面向执行者。
 
 payload 字段：
+- strategy_name: string，为这套策略取一个简短有力的名字（4~12字，贴合策略风格与方法论，如「ETH 多周期共振短线」「趋势猎手·分批建仓」，禁止叫「策略A」这类无意义名字；用户语言为英文时取英文名）
+- strategy_description: string，一句话策略简介（30字内）
 - prompt_sections: {"role_definition": string, "trading_frequency": string, "entry_standards": string, "decision_process": string}（四段均必填）
 - custom_prompt: string（可为 ""）
 - style_note: 一句话说明本策略的风格定位与目标行情`
@@ -307,7 +314,7 @@ func (s *Server) execCouncilTool(call map[string]any, lang string) string {
 	}
 }
 
-// parseToolCalls 提取响应中的工具调用块
+// parseToolCalls 提取响应中的工具调用块（兼容 tool/json/裸围栏；自动展开 args 包装）
 func parseToolCalls(resp string) []map[string]any {
 	matches := reToolBlock.FindAllStringSubmatch(resp, -1)
 	var calls []map[string]any
@@ -315,6 +322,14 @@ func parseToolCalls(resp string) []map[string]any {
 		var c map[string]any
 		if err := json.Unmarshal([]byte(m[1]), &c); err == nil {
 			if _, ok := c["tool"].(string); ok {
+				// 兼容部分模型把参数包在 args 里：展开到顶层
+				if args, ok := c["args"].(map[string]any); ok {
+					for k, v := range args {
+						if _, exists := c[k]; !exists {
+							c[k] = v
+						}
+					}
+				}
 				calls = append(calls, c)
 			}
 		}
@@ -547,7 +562,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	}
 
 	// ---------- 第 1 轮：首席合约交易员 ----------
-	if _, err := s.runAgentTurn(st, modelID, "chief_trader", "请基于圆桌记录与真实K线给出实战交易计划。"); err != nil {
+	if _, err := s.runAgentTurn(st, modelID, "chief_trader", "请先点名点评情报分析师的结论（赞同或反驳+理由），再基于圆桌记录与真实K线给出实战交易计划。"); err != nil {
 		if err.Error() == "cancelled" {
 			st.setStatus("cancelled", "")
 			return
@@ -563,7 +578,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	}
 
 	// ---------- 第 2 轮：策略架构师 ----------
-	if _, err := s.runAgentTurn(st, modelID, "strategy_architect", "请给出完整参数配置（含 1w/1d/4h 逐周期趋势判断、K线与指标、币种来源）。"); err != nil {
+	if _, err := s.runAgentTurn(st, modelID, "strategy_architect", "请先点名点评交易员的计划（哪些采纳哪些有保留），再给出完整参数配置（含 1w/1d/4h 逐周期趋势判断、K线与指标、币种来源）。"); err != nil {
 		if err.Error() == "cancelled" {
 			st.setStatus("cancelled", "")
 			return
@@ -586,7 +601,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 			st.setStatus("cancelled", "")
 			return
 		}
-		instr := "请审查前序全部发言，给出风控意见与最终策略配置终稿（final_config）。"
+		instr := "请审查前序全部发言：对每位专家点名给出裁决（赞同/否决+理由），发现疑点先用 ask 代码块点名追问一位专家再终审，最后给出风控意见与最终策略配置终稿（final_config）。"
 		if extra != "" {
 			instr += extra
 		}
@@ -629,6 +644,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 
 	// ---------- 第 3 轮：首席策略撰写官 ----------
 	promptWritten := false
+	strategyName, strategyDesc := "", ""
 	writerExtra := ""
 	for attempt := 0; attempt < 3; attempt++ {
 		if st.cancelFlag.Load() {
@@ -638,7 +654,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 		if remainingBudget(st) <= 0 {
 			break
 		}
-		instr := "请基于全部圆桌发言撰写完整的 System Prompt 策略（四段结构）。"
+		instr := "请先点名引用交易员与架构师的核心观点（赞同什么、规避什么），再基于全部圆桌发言撰写完整的 System Prompt 策略（四段结构），并为策略取名。"
 		if reasoning != "" {
 			instr += "\n终审裁决参考: " + truncateRunes(reasoning, 600)
 		}
@@ -660,6 +676,12 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 			base.PromptSections.DecisionProcess = secs["decision_process"]
 			if cp, _ := envWriter.Payload["custom_prompt"].(string); strings.TrimSpace(cp) != "" {
 				base.CustomPrompt = strings.TrimSpace(cp)
+			}
+			if n, _ := envWriter.Payload["strategy_name"].(string); strings.TrimSpace(n) != "" {
+				strategyName = truncateRunes(strings.TrimSpace(n), 40)
+			}
+			if d, _ := envWriter.Payload["strategy_description"].(string); strings.TrimSpace(d) != "" {
+				strategyDesc = truncateRunes(strings.TrimSpace(d), 120)
 			}
 			promptWritten = true
 			break
@@ -683,6 +705,8 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	st.mu.Lock()
 	st.Result = &councilFinalResult{
 		Config:                 base,
+		StrategyName:           strategyName,
+		StrategyDescription:    strategyDesc,
 		ScanIntervalSuggestion: scanIntervalSuggestion,
 		Reasoning:              reasoning,
 		ClampWarnings:          clampWarnings,

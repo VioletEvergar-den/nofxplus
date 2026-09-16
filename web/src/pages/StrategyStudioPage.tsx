@@ -1063,6 +1063,37 @@ export function StrategyStudioPage() {
           setEditorHighlight(true)
           window.setTimeout(() => setEditorHighlight(false), 2600)
         }}
+        onCreateStrategy={async (name, description, config) => {
+          if (!token) return false
+          try {
+            const response = await fetch(`${API_BASE}/api/strategies`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ name, description, config }),
+            })
+            if (!response.ok) throw new Error('Failed to create strategy')
+            const result = await response.json()
+            await fetchStrategies()
+            if (result.id) {
+              const now = new Date().toISOString()
+              setSelectedStrategy({
+                id: result.id,
+                name,
+                description,
+                is_active: false,
+                is_default: false,
+                config,
+                created_at: now,
+                updated_at: now,
+              })
+              setEditingConfig(config)
+            }
+            notify.success(language === 'zh' ? `策略「${name}」已添加到列表` : `Strategy "${name}" added to the list`)
+            return true
+          } catch {
+            return false
+          }
+        }}
         aiModels={aiModels}
         defaultModelId={selectedModelId}
         currentConfig={editingConfig}
