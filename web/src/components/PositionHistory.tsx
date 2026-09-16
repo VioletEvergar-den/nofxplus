@@ -657,9 +657,9 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
         </div>
       )}
 
-      {/* Direction Stats */}
+      {/* Direction Stats（只有一个方向时占满整行，避免另一半空白） */}
       {directionStats.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={`grid gap-4 ${directionStats.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
           {directionStats.map((stat) => (
             <DirectionStatsCard key={stat.side} stat={stat} language={language} />
           ))}
