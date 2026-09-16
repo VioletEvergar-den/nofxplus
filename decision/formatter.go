@@ -219,10 +219,51 @@ func formatKlineDataZH(symbol string, tfData map[string]*market.TimeframeSeriesD
 			}
 
 			sb.WriteString("```\n\n")
+
+			// 技术指标序列（与K线对齐，从旧到新）
+			formatIndicatorSeriesZH(&sb, data)
 		}
 	}
 
 	return sb.String()
+}
+
+// formatIndicatorSeriesZH 输出单个时间框架的技术指标序列（中文）
+func formatIndicatorSeriesZH(sb *strings.Builder, data *market.TimeframeSeriesData) {
+	wrote := false
+	if len(data.EMA20Values) > 0 {
+		sb.WriteString(fmt.Sprintf("EMA20: %s\n", formatFloatSlice(data.EMA20Values)))
+		wrote = true
+	}
+	if len(data.EMA50Values) > 0 {
+		sb.WriteString(fmt.Sprintf("EMA50: %s\n", formatFloatSlice(data.EMA50Values)))
+		wrote = true
+	}
+	if len(data.MACDValues) > 0 {
+		sb.WriteString(fmt.Sprintf("MACD: %s\n", formatFloatSlice(data.MACDValues)))
+		wrote = true
+	}
+	if len(data.RSI7Values) > 0 {
+		sb.WriteString(fmt.Sprintf("RSI7: %s\n", formatFloatSlice(data.RSI7Values)))
+		wrote = true
+	}
+	if len(data.RSI14Values) > 0 {
+		sb.WriteString(fmt.Sprintf("RSI14: %s\n", formatFloatSlice(data.RSI14Values)))
+		wrote = true
+	}
+	if data.ATR14 > 0 {
+		sb.WriteString(fmt.Sprintf("ATR14: %.3f\n", data.ATR14))
+		wrote = true
+	}
+	if len(data.BOLLUpper) > 0 {
+		sb.WriteString(fmt.Sprintf("BOLL 上轨: %s\n", formatFloatSlice(data.BOLLUpper)))
+		sb.WriteString(fmt.Sprintf("BOLL 中轨: %s\n", formatFloatSlice(data.BOLLMiddle)))
+		sb.WriteString(fmt.Sprintf("BOLL 下轨: %s\n", formatFloatSlice(data.BOLLLower)))
+		wrote = true
+	}
+	if wrote {
+		sb.WriteString("\n")
+	}
 }
 
 // formatOIRankingZH 格式化OI排名数据（中文）
@@ -749,10 +790,51 @@ func formatKlineDataEN(symbol string, tfData map[string]*market.TimeframeSeriesD
 			}
 
 			sb.WriteString("```\n\n")
+
+			// Indicator series (aligned with klines, oldest → latest)
+			formatIndicatorSeriesEN(&sb, data)
 		}
 	}
 
 	return sb.String()
+}
+
+// formatIndicatorSeriesEN outputs indicator series for a single timeframe (English)
+func formatIndicatorSeriesEN(sb *strings.Builder, data *market.TimeframeSeriesData) {
+	wrote := false
+	if len(data.EMA20Values) > 0 {
+		sb.WriteString(fmt.Sprintf("EMA20: %s\n", formatFloatSlice(data.EMA20Values)))
+		wrote = true
+	}
+	if len(data.EMA50Values) > 0 {
+		sb.WriteString(fmt.Sprintf("EMA50: %s\n", formatFloatSlice(data.EMA50Values)))
+		wrote = true
+	}
+	if len(data.MACDValues) > 0 {
+		sb.WriteString(fmt.Sprintf("MACD: %s\n", formatFloatSlice(data.MACDValues)))
+		wrote = true
+	}
+	if len(data.RSI7Values) > 0 {
+		sb.WriteString(fmt.Sprintf("RSI7: %s\n", formatFloatSlice(data.RSI7Values)))
+		wrote = true
+	}
+	if len(data.RSI14Values) > 0 {
+		sb.WriteString(fmt.Sprintf("RSI14: %s\n", formatFloatSlice(data.RSI14Values)))
+		wrote = true
+	}
+	if data.ATR14 > 0 {
+		sb.WriteString(fmt.Sprintf("ATR14: %.3f\n", data.ATR14))
+		wrote = true
+	}
+	if len(data.BOLLUpper) > 0 {
+		sb.WriteString(fmt.Sprintf("BOLL Upper: %s\n", formatFloatSlice(data.BOLLUpper)))
+		sb.WriteString(fmt.Sprintf("BOLL Middle: %s\n", formatFloatSlice(data.BOLLMiddle)))
+		sb.WriteString(fmt.Sprintf("BOLL Lower: %s\n", formatFloatSlice(data.BOLLLower)))
+		wrote = true
+	}
+	if wrote {
+		sb.WriteString("\n")
+	}
 }
 
 // formatOIRankingEN 格式化OI排名数据（英文）

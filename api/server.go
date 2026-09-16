@@ -14,9 +14,7 @@ import (
 	"nofx/logger"
 	"nofx/manager"
 	"nofx/market"
-	"nofx/provider/alpaca"
 	"nofx/provider/hyperliquid"
-	"nofx/provider/twelvedata"
 	"nofx/store"
 	"nofx/trader"
 	"strconv"
@@ -2528,28 +2526,8 @@ func (s *Server) handleKlines(c *gin.Context) {
 
 	// Route to appropriate data source based on exchange type
 	switch exchangeLower {
-	case "alpaca":
-		// US Stocks via Alpaca
-		klines, err = s.getKlinesFromAlpaca(symbol, interval, limit)
-		if err != nil {
-			logger.Errorf("❌ Alpaca API failed for %s: %v", symbol, err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get klines from Alpaca: %v", err),
-			})
-			return
-		}
-	case "forex", "metals":
-		// Forex and Metals via Twelve Data
-		klines, err = s.getKlinesFromTwelveData(symbol, interval, limit)
-		if err != nil {
-			logger.Errorf("❌ TwelveData API failed for %s: %v", symbol, err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to get klines from TwelveData: %v", err),
-			})
-			return
-		}
-	case "hyperliquid", "hyperliquid-xyz", "xyz":
-		// Hyperliquid native API - supports both crypto perps and stock perps (xyz dex)
+	case "hyperliquid":
+		// Hyperliquid native API for crypto perps
 		klines, err = market.GetKlinesHyperliquid(symbol, interval, limit)
 		if err != nil {
 			logger.Errorf("❌ Hyperliquid API failed for %s: %v", symbol, err)
@@ -2574,80 +2552,6 @@ func (s *Server) handleKlines(c *gin.Context) {
 	c.JSON(http.StatusOK, klines)
 }
 
-// getKlinesFromAlpaca fetches kline data from Alpaca API for US stocks
-func (s *Server) getKlinesFromAlpaca(symbol, interval string, limit int) ([]market.Kline, error) {
-	// Create Alpaca client
-	client := alpaca.NewClient()
-
-	// Map interval to Alpaca timeframe format
-	timeframe := alpaca.MapTimeframe(interval)
-
-	// Fetch bars from Alpaca
-	ctx := context.Background()
-	bars, err := client.GetBars(ctx, symbol, timeframe, limit)
-	if err != nil {
-		return nil, fmt.Errorf("alpaca API error: %w", err)
-	}
-
-	// Convert Alpaca bars to market.Kline format
-	klines := make([]market.Kline, len(bars))
-	for i, bar := range bars {
-		klines[i] = market.Kline{
-			OpenTime:    bar.Timestamp.UnixMilli(),
-			Open:        bar.Open,
-			High:        bar.High,
-			Low:         bar.Low,
-			Close:       bar.Close,
-			Volume:      float64(bar.Volume),             // 股数
-			QuoteVolume: float64(bar.Volume) * bar.Close, // 成交额 = 股数 * 收盘价 (USD)
-			CloseTime:   bar.Timestamp.UnixMilli(),
-		}
-	}
-
-	return klines, nil
-}
-
-// getKlinesFromTwelveData fetches kline data from Twelve Data API for forex and metals
-func (s *Server) getKlinesFromTwelveData(symbol, interval string, limit int) ([]market.Kline, error) {
-	// Create Twelve Data client
-	client := twelvedata.NewClient()
-
-	// Map interval to Twelve Data timeframe format
-	timeframe := twelvedata.MapTimeframe(interval)
-
-	// Fetch time series from Twelve Data
-	ctx := context.Background()
-	result, err := client.GetTimeSeries(ctx, symbol, timeframe, limit)
-	if err != nil {
-		return nil, fmt.Errorf("twelvedata API error: %w", err)
-	}
-
-	// Convert Twelve Data bars to market.Kline format
-	// Note: Twelve Data returns bars in reverse order (newest first)
-	klines := make([]market.Kline, len(result.Values))
-	for i, bar := range result.Values {
-		open, high, low, close, volume, timestamp, err := twelvedata.ParseBar(bar)
-		if err != nil {
-			logger.Warnf("⚠️ Failed to parse TwelveData bar: %v", err)
-			continue
-		}
-
-		// Reverse order: put oldest first
-		idx := len(result.Values) - 1 - i
-		klines[idx] = market.Kline{
-			OpenTime:  timestamp,
-			Open:      open,
-			High:      high,
-			Low:       low,
-			Close:     close,
-			Volume:    volume,
-			CloseTime: timestamp,
-		}
-	}
-
-	return klines, nil
-}
-
 // handleSymbols returns available symbols for a given exchange
 func (s *Server) handleSymbols(c *gin.Context) {
 	exchange := c.DefaultQuery("exchange", "hyperliquid")
@@ -2655,57 +2559,27 @@ func (s *Server) handleSymbols(c *gin.Context) {
 	type SymbolInfo struct {
 		Symbol      string `json:"symbol"`
 		Name        string `json:"name"`
-		Category    string `json:"category"` // crypto, stock, forex, commodity, index
+		Category    string `json:"category"` // crypto
 		MaxLeverage int    `json:"maxLeverage,omitempty"`
 	}
 
 	var symbols []SymbolInfo
 
 	switch strings.ToLower(exchange) {
-	case "hyperliquid", "hyperliquid-xyz", "xyz":
-		// Fetch symbols from Hyperliquid
+	case "hyperliquid":
+		// Fetch crypto perp symbols from Hyperliquid
 		client := hyperliquid.NewClient()
-		ctx := context.Background()
-
-		// Get crypto perps from default dex
-		if exchange == "hyperliquid" || exchange == "hyperliquid-xyz" {
-			mids, err := client.GetAllMids(ctx)
-			if err == nil {
-				for symbol := range mids {
-					// Skip spot tokens (start with @)
-					if strings.HasPrefix(symbol, "@") {
-						continue
-					}
-					symbols = append(symbols, SymbolInfo{
-						Symbol:   symbol,
-						Name:     symbol,
-						Category: "crypto",
-					})
-				}
-			}
-		}
-
-		// Get xyz dex symbols (stocks, forex, commodities)
-		xyzMids, err := client.GetAllMidsXYZ(ctx)
+		mids, err := client.GetAllMids(context.Background())
 		if err == nil {
-			for symbol := range xyzMids {
-				// Remove xyz: prefix for display
-				displaySymbol := strings.TrimPrefix(symbol, "xyz:")
-				var category string
-				switch displaySymbol {
-				case "GOLD", "SILVER":
-					category = "commodity"
-				case "EUR", "JPY":
-					category = "forex"
-				case "XYZ100":
-					category = "index"
-				default:
-					category = "stock"
+			for symbol := range mids {
+				// Skip spot tokens (start with @)
+				if strings.HasPrefix(symbol, "@") {
+					continue
 				}
 				symbols = append(symbols, SymbolInfo{
-					Symbol:   displaySymbol,
-					Name:     displaySymbol,
-					Category: category,
+					Symbol:   symbol,
+					Name:     symbol,
+					Category: "crypto",
 				})
 			}
 		}
@@ -3283,9 +3157,6 @@ func (s *Server) handleGetSupportedExchanges(c *gin.Context) {
 		{ExchangeType: "okx", Name: "OKX Futures", Type: "cex"},
 		{ExchangeType: "hyperliquid", Name: "Hyperliquid", Type: "dex"},
 		{ExchangeType: "aster", Name: "Aster DEX", Type: "dex"},
-		{ExchangeType: "alpaca", Name: "Alpaca (US Stocks)", Type: "stock"},
-		{ExchangeType: "forex", Name: "Forex (TwelveData)", Type: "forex"},
-		{ExchangeType: "metals", Name: "Metals (TwelveData)", Type: "metals"},
 	}
 
 	c.JSON(http.StatusOK, supportedExchanges)

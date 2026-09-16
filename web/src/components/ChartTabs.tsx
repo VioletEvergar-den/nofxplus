@@ -15,7 +15,7 @@ interface ChartTabsProps {
 
 type ChartTab = 'equity' | 'kline'
 type Interval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
-type MarketType = 'hyperliquid' | 'crypto' | 'stocks' | 'forex' | 'metals'
+type MarketType = 'hyperliquid' | 'crypto'
 
 interface SymbolInfo {
   symbol: string
@@ -27,9 +27,6 @@ interface SymbolInfo {
 const MARKET_CONFIG = {
   hyperliquid: { exchange: 'hyperliquid', defaultSymbol: 'BTC', icon: '🔷', label: { zh: 'HL', en: 'HL' }, color: 'cyan', hasDropdown: true },
   crypto: { exchange: 'binance', defaultSymbol: 'BTCUSDT', icon: '₿', label: { zh: '加密', en: 'Crypto' }, color: 'yellow', hasDropdown: false },
-  stocks: { exchange: 'alpaca', defaultSymbol: 'AAPL', icon: '📈', label: { zh: '美股', en: 'Stocks' }, color: 'green', hasDropdown: false },
-  forex: { exchange: 'forex', defaultSymbol: 'EUR/USD', icon: '💱', label: { zh: '外汇', en: 'Forex' }, color: 'blue', hasDropdown: false },
-  metals: { exchange: 'metals', defaultSymbol: 'XAU/USD', icon: '🥇', label: { zh: '金属', en: 'Metals' }, color: 'amber', hasDropdown: false },
 }
 
 const INTERVALS: { value: Interval; label: string }[] = [
@@ -81,8 +78,8 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: C
         .then(res => res.json())
         .then(data => {
           if (data.symbols) {
-            // 按类别排序: crypto > stock > forex > commodity > index
-            const categoryOrder: Record<string, number> = { crypto: 0, stock: 1, forex: 2, commodity: 3, index: 4 }
+            // 按类别排序: crypto 优先
+            const categoryOrder: Record<string, number> = { crypto: 0 }
             const sorted = [...data.symbols].sort((a: SymbolInfo, b: SymbolInfo) => {
               const orderA = categoryOrder[a.category] ?? 5
               const orderB = categoryOrder[b.category] ?? 5
@@ -233,10 +230,10 @@ export function ChartTabs({ traderId, selectedSymbol, updateKey, exchangeId }: C
                       </div>
                     </div>
                     <div className="overflow-y-auto max-h-52">
-                      {['crypto', 'stock', 'forex', 'commodity', 'index'].map(category => {
+                      {['crypto'].map(category => {
                         const categorySymbols = filteredSymbols.filter(s => s.category === category)
                         if (categorySymbols.length === 0) return null
-                        const labels: Record<string, string> = { crypto: 'Crypto', stock: 'Stocks', forex: 'Forex', commodity: 'Commodities', index: 'Index' }
+                        const labels: Record<string, string> = { crypto: 'Crypto' }
                         return (
                           <div key={category}>
                             <div className="px-3 py-1 text-[9px] font-medium text-gray-500 bg-[#0D1117] uppercase tracking-wider">{labels[category]}</div>

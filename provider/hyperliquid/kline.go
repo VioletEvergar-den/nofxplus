@@ -71,11 +71,11 @@ func NewTestnetClient() *Client {
 }
 
 // GetCandles fetches historical candlestick data for a symbol
-// coin: symbol name (e.g., "BTC", "TSLA", "AAPL", "xyz:TSLA")
+// coin: symbol name (e.g., "BTC", "ETH")
 // interval: "1m", "5m", "15m", "1h", "4h", "1d"
 // limit: number of candles to fetch (max 5000)
 func (c *Client) GetCandles(ctx context.Context, coin string, interval string, limit int) ([]Candle, error) {
-	// Format coin name for API (stock perps need xyz: prefix)
+	// Format coin name for API
 	coin = FormatCoinForAPI(coin)
 
 	// Calculate time range based on interval and limit
@@ -141,11 +141,6 @@ func (c *Client) GetCandles(ctx context.Context, coin string, interval string, l
 // GetAllMids fetches current mid prices for all assets (default perp dex)
 func (c *Client) GetAllMids(ctx context.Context) (map[string]string, error) {
 	return c.GetAllMidsWithDex(ctx, "")
-}
-
-// GetAllMidsXYZ fetches current mid prices for xyz dex (stocks, forex, commodities)
-func (c *Client) GetAllMidsXYZ(ctx context.Context) (map[string]string, error) {
-	return c.GetAllMidsWithDex(ctx, XYZDex)
 }
 
 // GetAllMidsWithDex fetches current mid prices for a specific dex
@@ -244,8 +239,6 @@ type AssetInfo struct {
 // NormalizeCoin normalizes coin name for Hyperliquid API
 // Examples:
 //   - "BTCUSDT" -> "BTC"
-//   - "TSLA-USDC" -> "TSLA"
-//   - "xyz:TSLA" -> "TSLA"
 //   - "BTC" -> "BTC"
 func NormalizeCoin(symbol string) string {
 	return NormalizeCoinBase(symbol)
@@ -319,81 +312,8 @@ func getIntervalDuration(interval string) time.Duration {
 	}
 }
 
-// XYZ Dex name for stock perps, forex, and commodities
-const XYZDex = "xyz"
-
-// Stock perps symbols available on Hyperliquid xyz dex
-// Use xyz:SYMBOL format when calling the API
-var StockPerpsSymbols = []string{
-	"TSLA",  // Tesla
-	"AAPL",  // Apple
-	"NVDA",  // Nvidia
-	"MSFT",  // Microsoft
-	"META",  // Meta
-	"AMZN",  // Amazon
-	"GOOGL", // Alphabet
-	"AMD",   // AMD
-	"COIN",  // Coinbase
-	"NFLX",  // Netflix
-	"PLTR",  // Palantir
-	"HOOD",  // Robinhood
-	"INTC",  // Intel
-	"MSTR",  // MicroStrategy
-	"TSM",   // TSMC
-	"ORCL",  // Oracle
-	"MU",    // Micron
-	"RIVN",  // Rivian
-	"COST",  // Costco
-	"LLY",   // Eli Lilly
-	"CRCL",  // Circle (new)
-	"SKHX",  // Skyward (new)
-	"SNDK",  // Sandisk (new)
-}
-
-// Forex and commodities on xyz dex
-var XYZOtherSymbols = []string{
-	"GOLD",   // Gold
-	"SILVER", // Silver
-	"EUR",    // EUR/USD
-	"JPY",    // USD/JPY
-	"XYZ100", // Index
-}
-
-// IsStockPerp checks if a symbol is a stock perpetual
-func IsStockPerp(symbol string) bool {
-	coin := NormalizeCoinBase(symbol)
-	for _, s := range StockPerpsSymbols {
-		if s == coin {
-			return true
-		}
-	}
-	return false
-}
-
-// IsXYZAsset checks if a symbol is on the xyz dex (stocks, forex, commodities)
-func IsXYZAsset(symbol string) bool {
-	coin := NormalizeCoinBase(symbol)
-	// Check stock perps
-	for _, s := range StockPerpsSymbols {
-		if s == coin {
-			return true
-		}
-	}
-	// Check other xyz assets
-	for _, s := range XYZOtherSymbols {
-		if s == coin {
-			return true
-		}
-	}
-	return false
-}
-
 // NormalizeCoinBase removes common suffixes to get base symbol
 func NormalizeCoinBase(symbol string) string {
-	// Remove xyz: prefix if present
-	if strings.HasPrefix(symbol, "xyz:") {
-		return strings.TrimPrefix(symbol, "xyz:")
-	}
 	// Remove -USDC suffix
 	if strings.HasSuffix(symbol, "-USDC") {
 		return strings.TrimSuffix(symbol, "-USDC")
@@ -410,11 +330,7 @@ func NormalizeCoinBase(symbol string) string {
 }
 
 // FormatCoinForAPI formats the coin name for Hyperliquid API
-// Stock perps need xyz:SYMBOL format, crypto uses plain symbol
+// Crypto uses plain symbol
 func FormatCoinForAPI(symbol string) string {
-	base := NormalizeCoinBase(symbol)
-	if IsXYZAsset(base) {
-		return "xyz:" + base
-	}
-	return base
+	return NormalizeCoinBase(symbol)
 }

@@ -50,24 +50,12 @@ interface IndicatorConfig {
 }
 
 // 获取成交额货币单位
-const getQuoteUnit = (exchange: string): string => {
-  if (['alpaca'].includes(exchange)) {
-    return 'USD'
-  }
-  if (['forex', 'metals'].includes(exchange)) {
-    return '' // 外汇/贵金属没有真实成交量
-  }
+const getQuoteUnit = (_exchange: string): string => {
   return 'USDT' // 加密货币默认 USDT
 }
 
 // 获取成交量数量单位
-const getBaseUnit = (exchange: string, symbol: string): string => {
-  if (['alpaca'].includes(exchange)) {
-    return '股'
-  }
-  if (['forex', 'metals'].includes(exchange)) {
-    return ''
-  }
+const getBaseUnit = (_exchange: string, symbol: string): string => {
   // 加密货币：从 symbol 提取基础资产
   const base = symbol.replace(/USDT$|USD$|BUSD$/, '')
   return base || '个'
@@ -800,7 +788,7 @@ export function AdvancedChart({
               >
                 {marketStats.price.toLocaleString(undefined, {
                   minimumFractionDigits: 2,
-                  maximumFractionDigits: exchange === 'forex' || exchange === 'metals' ? 4 : 2
+                  maximumFractionDigits: 2
                 })}
               </span>
               <span

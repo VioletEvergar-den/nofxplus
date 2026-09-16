@@ -32,11 +32,6 @@ type Config struct {
 	// Helps us understand product usage and improve the experience
 	// Set EXPERIENCE_IMPROVEMENT=false to disable
 	ExperienceImprovement bool
-
-	// Market data provider API keys
-	AlpacaAPIKey    string // Alpaca API key for US stocks
-	AlpacaSecretKey string // Alpaca secret key
-	TwelveDataKey   string // TwelveData API key for forex & metals
 }
 
 // Init initializes global configuration (from .env)
@@ -85,10 +80,8 @@ func Init() {
 		cfg.ExperienceImprovement = strings.ToLower(v) != "false"
 	}
 
-	// Market data provider API keys
-	cfg.AlpacaAPIKey = os.Getenv("ALPACA_API_KEY")
-	cfg.AlpacaSecretKey = os.Getenv("ALPACA_SECRET_KEY")
-	cfg.TwelveDataKey = os.Getenv("TWELVEDATA_API_KEY")
+	// Transport encryption
+	cfg.TransportEncryption = os.Getenv("TRANSPORT_ENCRYPTION") == "true"
 
 	if v := os.Getenv("BINANCE_TAKER_FEE_RATE"); v != "" {
 		if fee, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && fee > 0 {

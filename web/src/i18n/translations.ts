@@ -737,7 +737,7 @@ export const translations = {
     nofxDescription2:
       "'decision-risk-execution' layer, supporting all asset classes.",
     nofxDescription3:
-      'Starting with crypto markets (24/7, high volatility perfect testing ground), future expansion to stocks, futures, forex. Core: open architecture, AI',
+      'Focused on crypto markets (24/7, high volatility perfect testing ground). Core: open architecture, AI',
     nofxDescription4:
       'Darwinism (multi-agent self-competition, strategy evolution), CodeFi',
     nofxDescription5:
@@ -823,7 +823,7 @@ export const translations = {
     // ===== GETTING STARTED =====
     faqWhatIsNOFX: 'What is NOFX?',
     faqWhatIsNOFXAnswer:
-      'NOFX is an open-source AI-powered trading operating system for cryptocurrency and US stock markets. It uses large language models (LLMs) like DeepSeek, GPT, Claude, Gemini to analyze market data and make autonomous trading decisions. Key features include: multi-AI model support, multi-exchange trading, visual strategy builder, backtesting, and AI debate arena for consensus decisions.',
+      'NOFX is an open-source AI-powered trading operating system for cryptocurrency markets. It uses large language models (LLMs) like DeepSeek, GPT, Claude, Gemini to analyze market data and make autonomous trading decisions. Key features include: multi-AI model support, multi-exchange trading, visual strategy builder, backtesting, and AI debate arena for consensus decisions.',
 
     faqHowDoesItWork: 'How does NOFX work?',
     faqHowDoesItWorkAnswer:
@@ -1899,7 +1899,7 @@ export const translations = {
     nofxDescription1: "一个透明、可信任的开源 OS，提供统一的 '决策-风险-执行'",
     nofxDescription2: '层，支持所有资产类别。',
     nofxDescription3:
-      '从加密市场起步（24/7、高波动性完美测试场），未来扩展到股票、期货、外汇。核心：开放架构、AI',
+      '专注加密市场（24/7、高波动性完美测试场）。核心：开放架构、AI',
     nofxDescription4:
       '达尔文主义（多代理自竞争、策略进化）、CodeFi 飞轮（开发者 PR',
     nofxDescription5: '贡献获积分奖励）。',
@@ -1979,7 +1979,7 @@ export const translations = {
     // ===== 入门指南 =====
     faqWhatIsNOFX: 'NOFX 是什么？',
     faqWhatIsNOFXAnswer:
-      'NOFX 是一个开源的 AI 驱动交易操作系统，支持加密货币和美股市场。它使用大语言模型（LLM）如 DeepSeek、GPT、Claude、Gemini 来分析市场数据，进行自主交易决策。核心功能包括：多 AI 模型支持、多交易所交易、可视化策略构建器、回测系统、以及用于共识决策的 AI 辩论竞技场。',
+      'NOFX 是一个开源的 AI 驱动交易操作系统，支持加密货币市场。它使用大语言模型（LLM）如 DeepSeek、GPT、Claude、Gemini 来分析市场数据，进行自主交易决策。核心功能包括：多 AI 模型支持、多交易所交易、可视化策略构建器、回测系统、以及用于共识决策的 AI 辩论竞技场。',
 
     faqHowDoesItWork: 'NOFX 是如何工作的？',
     faqHowDoesItWorkAnswer:
