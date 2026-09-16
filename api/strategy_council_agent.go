@@ -44,12 +44,22 @@ const councilAskProtocol = `
 合法 target: intel_analyst / chief_trader / strategy_architect。系统会把问题转给对方在圆桌作答后回到你。`
 
 // councilAgentSystemPrompt Agent 角色系统提示词
-func councilAgentSystemPrompt(role councilRoleDef, lang string) string {
+func councilAgentSystemPrompt(role councilRoleDef, lang string, capital float64) string {
 	summaryLang := "中文"
 	if lang == "en" {
 		summaryLang = "English"
 	}
+	capitalSection := "用户未单独填写本金规模；若策略意图中提到资金（如「只有 10U」「500U」），以该表述为准并严格执行下方可开仓校验。"
+	if capital > 0 {
+		capitalSection = fmt.Sprintf("**用户本金: %.2f USDT**（真实资金，规则必须严格执行）。", capital)
+	}
 	base := fmt.Sprintf(`你是 NOFX 量化交易系统「策略专家团」成员：%s%s（Agent 模式）。团队围绕用户策略意图圆桌协作，按顺序发言，所有前序发言在「圆桌发言记录」中全量可见。
+
+## 资金可开仓校验（硬性规则，违反即方案作废）
+%s
+币安 USDT-M 合约最小名义价值：BTC ≥ 100 USDT，ETH 及多数主流币 ≥ 20 USDT，部分小币 ≥ 5 USDT（以交易所实际规则为准）。
+可开仓名义价值 = 本金 × 杠杆。若本金在最高允许杠杆下仍达不到某币种的最小名义价值，该币种**根本开不起仓，绝对禁止推荐**（例如 10U 本金 × 10x = 100U 名义，够 ETH 但不够 BTC 的 100U 门槛附近时必须查证并保守处理）。
+推荐币种前必须先做这笔乘法验算；小本金（<50U）优先考虑合约面值小、精度友好的中小市值币种，并明确写出每个币的实际可开仓名义与仓位拆分。
 
 ## 圆桌礼仪（必须遵守）
 - 发言开头必须先点评前序专家：点名引用其观点（如「🎯 首席合约交易员认为…」），明确表态赞同或反驳并给出理由，不许无视前序发言自说自话。
@@ -63,7 +73,7 @@ func councilAgentSystemPrompt(role councilRoleDef, lang string) string {
 - payload 字段名和枚举值必须严格使用下方给定的英文值。
 - 对上游结论有不同意见必须写入 concerns，供风控评审官裁决。
 - 需要数据时先输出工具代码块；需要追问时输出 ask 代码块；然后系统会回传结果。
-`, role.Emoji, roleDisplayName(role.ID, lang), envelopeSchemaHint, summaryLang)
+`, role.Emoji, roleDisplayName(role.ID, lang), capitalSection, envelopeSchemaHint, summaryLang)
 
 	switch role.ID {
 	case "intel_analyst":
@@ -385,7 +395,7 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		}
 
 		atomic.AddInt32(&st.UsedBudget, 1)
-		resp, err := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(role, st.Language), sb.String())
+		resp, err := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(role, st.Language, st.Capital), sb.String())
 		if err != nil {
 			st.mu.Lock()
 			step.Status = string(councilStepFailed)
@@ -438,7 +448,7 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 					if remainingBudget(st) > 0 {
 						atomic.AddInt32(&st.UsedBudget, 1)
 						ansPrompt := fmt.Sprintf("## 用户意图\n%s\n\n## 圆桌发言记录\n%s\n## 追问\n风控评审官向你提问：%s\n\n请直接作答：输出信封 JSON，summary 为你的圆桌回应内容，payload 填空对象 {} 即可。", st.Intent, buildTranscriptText(st), ask.Question)
-						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language), ansPrompt)
+						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language, st.Capital), ansPrompt)
 						if err2 == nil {
 							env2, errP := parseEnvelope(resp2)
 							if errP != nil {
@@ -543,7 +553,11 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	repairRounds := 0
 
 	// 圆桌开场
-	st.addTranscript("system", "🏛️", "System", "system", "策略意图: "+st.Intent, nil)
+	opening := "策略意图: " + st.Intent
+	if st.Capital > 0 {
+		opening += fmt.Sprintf("\n用户本金: %.2f USDT（所有币种推荐必须通过可开仓校验：本金×杠杆 ≥ 该币最小名义价值，BTC≥100U，主流币≥20U）", st.Capital)
+	}
+	st.addTranscript("system", "🏛️", "System", "system", opening, nil)
 
 	// ---------- 第 1 轮：情报分析师 ----------
 	if _, err := s.runAgentTurn(st, modelID, "intel_analyst", "请给出市场状态与币种画像（先用工具查证再下结论）。"); err != nil {
@@ -562,7 +576,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	}
 
 	// ---------- 第 1 轮：首席合约交易员 ----------
-	if _, err := s.runAgentTurn(st, modelID, "chief_trader", "请先点名点评情报分析师的结论（赞同或反驳+理由），再基于圆桌记录与真实K线给出实战交易计划。"); err != nil {
+	if _, err := s.runAgentTurn(st, modelID, "chief_trader", "请先点名点评情报分析师的结论（赞同或反驳+理由），再基于圆桌记录与真实K线给出实战交易计划。推荐的每个币种必须通过可开仓校验（本金×杠杆≥最小名义价值，开不起仓的币直接排除）。"); err != nil {
 		if err.Error() == "cancelled" {
 			st.setStatus("cancelled", "")
 			return
@@ -578,7 +592,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	}
 
 	// ---------- 第 2 轮：策略架构师 ----------
-	if _, err := s.runAgentTurn(st, modelID, "strategy_architect", "请先点名点评交易员的计划（哪些采纳哪些有保留），再给出完整参数配置（含 1w/1d/4h 逐周期趋势判断、K线与指标、币种来源）。"); err != nil {
+	if _, err := s.runAgentTurn(st, modelID, "strategy_architect", "请先点名点评交易员的计划（哪些采纳哪些有保留），再给出完整参数配置（含 1w/1d/4h 逐周期趋势判断、K线与指标、币种来源）。币种来源必须全部通过可开仓校验，小本金时优先合约面值小的币种。"); err != nil {
 		if err.Error() == "cancelled" {
 			st.setStatus("cancelled", "")
 			return

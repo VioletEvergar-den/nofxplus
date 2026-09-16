@@ -82,6 +82,7 @@ type councilState struct {
 	Intent     string              `json:"intent"`
 	Language   string              `json:"language"`
 	SearchOn   bool                `json:"search_on"`
+	Capital    float64             `json:"capital,omitempty"` // 用户本金（USDT），用于可开仓校验
 	Budget     int                 `json:"budget"`      // Agent 全场调用总预算（用户可设）
 	UsedBudget int32               `json:"used_budget"` // 已消耗调用次数（atomic）
 	Steps      []*councilStep      `json:"steps"`
@@ -1259,7 +1260,8 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 		Language     string               `json:"language"`
 		Mode         string               `json:"mode"`        // generate|modify
 		Config       *store.StrategyConfig `json:"config"`
-		AgentBudget  int                  `json:"agent_budget"` // Agent 全场调用总预算（5~40，默认12）
+		AgentBudget  int                  `json:"agent_budget"` // Agent 全场调用总预算（5~200，默认12）
+		Capital      float64              `json:"capital"`      // 用户本金（USDT，选填），用于可开仓校验
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
@@ -1319,6 +1321,7 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 		Intent:    req.Intent,
 		Language:  req.Language,
 		SearchOn:  getSearxngURL() != "",
+		Capital:   req.Capital,
 		Budget:    budget,
 		Steps:     make([]*councilStep, 0, len(councilRoles)),
 		Transcript: make([]councilTranscriptEntry, 0),

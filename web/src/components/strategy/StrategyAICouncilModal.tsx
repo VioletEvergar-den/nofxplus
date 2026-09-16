@@ -253,6 +253,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
   const [applied, setApplied] = useState(false)
   const [starting, setStarting] = useState(false)
   const [agentBudget, setAgentBudget] = useState(12)
+  const [capital, setCapital] = useState('')
   const [creating, setCreating] = useState(false)
   const [mode, setMode] = useState<'generate' | 'modify'>(currentConfig ? 'modify' : 'generate')
   // running 步骤的本地起始时间（role → 时间戳），用于显示已用时长
@@ -371,6 +372,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
           language,
           mode,
           agent_budget: agentBudget,
+          capital: capital.trim() ? Number(capital) : 0,
           config: mode === 'modify' ? currentConfig : undefined,
         }),
       })
@@ -515,7 +517,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-3">
                   {/* 模型 */}
                   <div>
                     <label className="block text-[11px] text-[#848E9C] mb-1.5">{t('aiCouncil.modelLabel', language)}</label>
@@ -533,21 +535,35 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
                       ))}
                     </select>
                   </div>
+                  {/* 本金 */}
+                  <div>
+                    <label className="block text-[11px] text-[#848E9C] mb-1.5">{t('aiCouncil.capitalLabel', language)}</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={capital}
+                      onChange={(e) => setCapital(e.target.value)}
+                      placeholder={t('aiCouncil.capitalPlaceholder', language)}
+                      className="w-full px-3 py-2 rounded-lg text-[12px] text-[#EAECEF] placeholder-[#5C6470] focus:outline-none focus:border-amber-500/50"
+                      style={{ background: '#1E2329', border: '1px solid #2B3139' }}
+                    />
+                  </div>
                   {/* 预算 */}
                   <div>
                     <label className="block text-[11px] text-[#848E9C] mb-1.5">{t('aiCouncil.budgetLabel', language)}</label>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2">
                       <input
                         type="number"
                         min={5}
                         max={200}
                         value={agentBudget}
                         onChange={(e) => setAgentBudget(Math.max(5, Math.min(200, Number(e.target.value) || 12)))}
-                        className="w-20 px-3 py-2 rounded-lg text-[12px] text-[#EAECEF] focus:outline-none focus:border-amber-500/50"
+                        className="w-16 px-2.5 py-2 rounded-lg text-[12px] text-[#EAECEF] focus:outline-none focus:border-amber-500/50"
                         style={{ background: '#1E2329', border: '1px solid #2B3139' }}
                       />
-                      <span className="text-[10px] text-[#848E9C] leading-tight">{t('aiCouncil.budgetHint', language)}</span>
                     </div>
+                    <p className="text-[9px] text-[#5C6470] mt-1 leading-tight">{t('aiCouncil.budgetHint', language)}</p>
                   </div>
                 </div>
 
