@@ -296,11 +296,16 @@ func (t *FuturesTrader) SyncOrdersFromBinance(traderID string, exchangeID string
 		if exists, err := positionStore.HasOrderID(traderID, orderID); err != nil {
 			logger.Infof("  ⚠️ Failed to check position by order ID: %v", err)
 		} else if !exists {
+			// 平仓成交时取出程序侧登记的平仓原因（AI 平仓/手动平仓/止盈止损/浮盈回撤等）
+			closeReason := ""
+			if strings.HasPrefix(orderAction, "close_") {
+				closeReason = TakePendingCloseReason(traderID, symbol, positionSide)
+			}
 			if err := posBuilder.ProcessTrade(
 				traderID, exchangeID, exchangeType,
 				symbol, positionSide, orderAction,
 				trade.Quantity, trade.Price, trade.Fee, trade.RealizedPnL,
-				trade.Time, trade.TradeID,
+				trade.Time, trade.TradeID, closeReason,
 			); err != nil {
 				logger.Infof("  ⚠️ Failed to sync position for trade %s: %v", trade.TradeID, err)
 			} else {

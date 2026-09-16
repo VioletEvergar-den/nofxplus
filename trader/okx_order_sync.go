@@ -251,11 +251,16 @@ func (t *OKXTrader) SyncOrdersFromOKX(traderID string, exchangeID string, exchan
 		}
 
 		// Create/update position record using PositionBuilder
+		// 平仓成交时取出程序侧登记的平仓原因（AI 平仓/手动平仓/止盈止损/浮盈回撤等）
+		closeReason := ""
+		if strings.HasPrefix(trade.OrderAction, "close_") {
+			closeReason = TakePendingCloseReason(traderID, symbol, positionSide)
+		}
 		if err := posBuilder.ProcessTrade(
 			traderID, exchangeID, exchangeType,
 			symbol, positionSide, trade.OrderAction,
 			trade.FillQtyBase, trade.FillPrice, trade.Fee, 0, // No per-trade PnL from OKX
-			trade.ExecTime, trade.TradeID,
+			trade.ExecTime, trade.TradeID, closeReason,
 		); err != nil {
 			logger.Infof("  ⚠️ Failed to sync position for trade %s: %v", trade.TradeID, err)
 		} else {

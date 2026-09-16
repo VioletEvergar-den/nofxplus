@@ -25,16 +25,19 @@ func NewPositionBuilder(positionStore *PositionStore) *PositionBuilder {
 }
 
 // ProcessTrade processes a single trade and updates position accordingly
+// closeReason: 平仓原因（manual/ai_decision/stop_loss/take_profit/profit_giveback/risk_control），
+// 仅 close_ 成交使用；开仓成交忽略，传空时落库为 "sync"（交易所同步兜底）。
 func (pb *PositionBuilder) ProcessTrade(
 	traderID, exchangeID, exchangeType, symbol, side, action string,
 	quantity, price, fee, realizedPnL float64,
 	tradeTime time.Time,
 	orderID string,
+	closeReason string,
 ) error {
 	if strings.HasPrefix(action, "open_") {
 		return pb.handleOpen(traderID, exchangeID, exchangeType, symbol, side, quantity, price, fee, tradeTime, orderID)
 	} else if strings.HasPrefix(action, "close_") {
-		return pb.handleClose(traderID, symbol, side, quantity, price, fee, realizedPnL, tradeTime, orderID)
+		return pb.handleClose(traderID, symbol, side, quantity, price, fee, realizedPnL, tradeTime, orderID, closeReason)
 	}
 	return nil
 }
@@ -95,6 +98,7 @@ func (pb *PositionBuilder) handleClose(
 	quantity, price, fee, realizedPnL float64,
 	tradeTime time.Time,
 	orderID string,
+	closeReason string,
 ) error {
 	// Get OPEN position
 	position, err := pb.positionStore.GetOpenPositionBySymbol(traderID, symbol, side)
@@ -157,6 +161,10 @@ func (pb *PositionBuilder) handleClose(
 		logger.Infof("  ✅ Full close: %s %s %.6f @ %.2f (avg exit: %.2f, entry: %.2f, PnL: %.2f)",
 			symbol, side, closeQty, price, finalExitPrice, position.EntryPrice, totalPnL)
 
+		// 平仓原因为空时回退为 sync（交易所同步/无法归因的平仓）
+		if closeReason == "" {
+			closeReason = "sync"
+		}
 		return pb.positionStore.ClosePositionFully(
 			position.ID,
 			finalExitPrice,
@@ -164,7 +172,7 @@ func (pb *PositionBuilder) handleClose(
 			tradeTime,
 			totalPnL,
 			totalFee,
-			"sync",
+			closeReason,
 		)
 	}
 }

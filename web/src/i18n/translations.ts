@@ -1141,6 +1141,7 @@ export const translations = {
       lev: 'Lev',
       pnl: 'P&L',
       duration: 'Duration',
+      closeReason: 'Reason',
       closedAt: 'Closed At',
     },
 
@@ -2290,6 +2291,7 @@ export const translations = {
       lev: '杠杆',
       pnl: '盈亏',
       duration: '持仓时长',
+      closeReason: '平仓原因',
       closedAt: '平仓时间',
     },
 

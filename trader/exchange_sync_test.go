@@ -142,7 +142,7 @@ func runStandardTests(t *testing.T, exchangeName string) {
 					trade.Symbol, trade.Side, trade.Action,
 					trade.Quantity, trade.Price, trade.Fee, trade.RealizedPnL,
 					time.Now().Add(time.Duration(i)*time.Second),
-					"",
+					"", "",
 				)
 				if err != nil {
 					t.Fatalf("Failed to process trade %d (%s): %v", i, trade.Action, err)
@@ -229,7 +229,7 @@ func TestPositionAccumulationBug(t *testing.T) {
 			"ETHUSDT", "LONG", "open_long",
 			0.1, 3500+float64(i*10), 0.5, 0,
 			time.Now().Add(time.Duration(i*2)*time.Second),
-			"",
+			"", "",
 		)
 		if err != nil {
 			t.Fatalf("Failed to open long %d: %v", i, err)
@@ -241,7 +241,7 @@ func TestPositionAccumulationBug(t *testing.T) {
 			"ETHUSDT", "LONG", "close_long",
 			0.1, 3600+float64(i*10), 0.5, 10,
 			time.Now().Add(time.Duration(i*2+1)*time.Second),
-			"",
+			"", "",
 		)
 		if err != nil {
 			t.Fatalf("Failed to close long %d: %v", i, err)
@@ -312,7 +312,7 @@ func TestQuantityPrecision(t *testing.T) {
 		"BTCUSDT", "LONG", "open_long",
 		0.01, 50000, 1.0, 0,
 		time.Now(),
-		"",
+		"", "",
 	)
 	if err != nil {
 		t.Fatalf("Failed to open: %v", err)
@@ -325,7 +325,7 @@ func TestQuantityPrecision(t *testing.T) {
 		"BTCUSDT", "LONG", "close_long",
 		0.00999999, 51000, 1.0, 10,
 		time.Now().Add(time.Second),
-		"",
+		"", "",
 	)
 	if err != nil {
 		t.Fatalf("Failed to close: %v", err)

@@ -1812,8 +1812,10 @@ func (at *AutoTrader) executeCloseLongWithRecord(decision *decision.Decision, ac
 	}
 
 	// Close position
+	SetPendingCloseReason(at.id, decision.Symbol, "LONG", "ai_decision")
 	order, err := at.trader.CloseLong(decision.Symbol, 0) // 0 = close all
 	if err != nil {
+		DiscardPendingCloseReason(at.id, decision.Symbol, "LONG")
 		return err
 	}
 
@@ -1956,8 +1958,10 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *decision.Decision, a
 	}
 
 	// Close position
+	SetPendingCloseReason(at.id, decision.Symbol, "SHORT", "ai_decision")
 	order, err := at.trader.CloseShort(decision.Symbol, 0) // 0 = close all
 	if err != nil {
+		DiscardPendingCloseReason(at.id, decision.Symbol, "SHORT")
 		return err
 	}
 
@@ -2538,7 +2542,7 @@ func (at *AutoTrader) startProfitGivebackMonitor() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
-		logger.Infof("🔻 [%s] 浮盈回撤保护监控已启动（每 30 秒检查，仅对 AI 设置了 profit_giveback_pct 的持仓生效）", at.name)
+		logger.Infof("🔻 [%s] 持仓保护监控已启动（每 30 秒检查：浮盈回撤保护 + AI 设定的止盈止损）", at.name)
 
 		for {
 			select {
@@ -2546,6 +2550,7 @@ func (at *AutoTrader) startProfitGivebackMonitor() {
 				return
 			case <-ticker.C:
 				at.checkProfitGiveback()
+				at.checkStopLossTakeProfit()
 			}
 		}
 	}()
@@ -2622,12 +2627,16 @@ func (at *AutoTrader) checkProfitGiveback() {
 
 		logger.Infof("🔻 [%s] 浮盈回撤保护触发: %s %s 峰值浮盈=%.2f 当前浮盈=%.2f 阈值=%.2f (回撤阈值 %.0f%%)，程序自动平仓",
 			at.name, symbol, strings.ToUpper(sideRaw), peak, pnl, threshold, givebackPct)
-		at.executeGivebackClose(symbol, strings.ToUpper(sideRaw), peak, pnl)
+		at.executeProtectiveClose(symbol, strings.ToUpper(sideRaw), "profit_giveback", "浮盈回撤保护",
+			fmt.Sprintf("峰值浮盈=%.2f 锁定浮盈=%.2f (回撤阈值 %.0f%%)", peak, pnl, givebackPct))
 	}
 }
 
-// executeGivebackClose 执行浮盈回撤触发的保护平仓（市价全平，交易所侧条件单由平仓流程自动撤销）。
-func (at *AutoTrader) executeGivebackClose(symbol, side string, peakPnl, currentPnl float64) {
+// executeProtectiveClose 执行程序侧保护平仓（市价全平，交易所侧条件单由平仓流程自动撤销）。
+// reason 用于已平仓记录显示平仓原因：profit_giveback / stop_loss / take_profit。
+func (at *AutoTrader) executeProtectiveClose(symbol, side, reason, triggerType, detail string) {
+	SetPendingCloseReason(at.id, symbol, side, reason)
+
 	var order map[string]interface{}
 	var err error
 
@@ -2638,7 +2647,8 @@ func (at *AutoTrader) executeGivebackClose(symbol, side string, peakPnl, current
 	}
 
 	if err != nil {
-		logger.Infof("❌ [%s] 浮盈回撤保护平仓失败 (%s %s): %v", at.name, symbol, side, err)
+		DiscardPendingCloseReason(at.id, symbol, side)
+		logger.Infof("❌ [%s] %s平仓失败 (%s %s): %v", at.name, triggerType, symbol, side, err)
 		return
 	}
 
@@ -2646,8 +2656,8 @@ func (at *AutoTrader) executeGivebackClose(symbol, side string, peakPnl, current
 	if id, ok := order["orderId"].(int64); ok {
 		orderID = id
 	}
-	logger.Infof("✅ [%s] 浮盈回撤保护平仓完成: %s %s 峰值浮盈=%.2f 锁定浮盈=%.2f (orderID=%d)",
-		at.name, symbol, side, peakPnl, currentPnl, orderID)
+	logger.Infof("✅ [%s] %s平仓完成: %s %s %s (orderID=%d)",
+		at.name, triggerType, symbol, side, detail, orderID)
 
 	// 重置该持仓的保护状态，避免 OrderSync 同步前重复触发
 	// （仓位归零后 GetPositions 不再返回该持仓，此处仅为快速兜底）
@@ -2657,6 +2667,79 @@ func (at *AutoTrader) executeGivebackClose(symbol, side string, peakPnl, current
 			posID := int64(prot[0])
 			_ = at.store.Position().UpdateProfitPeak(posID, 0)
 		}
+	}
+}
+
+// checkStopLossTakeProfit 执行一轮止盈止损检查：标记价触及 AI 设定的止损/止盈价时程序自动平仓。
+// 仅针对持仓记录中写入了 initial_stop_loss/initial_take_profit 的持仓（SL/TP 不在交易所挂条件单，由程序侧监控执行）。
+func (at *AutoTrader) checkStopLossTakeProfit() {
+	if at.trader == nil || at.store == nil {
+		return
+	}
+
+	// 查询设置了止盈或止损的 OPEN 持仓（无则直接返回，不调交易所 API）
+	sltpMap, err := at.store.Position().GetOpenPositionSLTP(at.id)
+	if err != nil || len(sltpMap) == 0 {
+		return
+	}
+
+	positions, err := at.trader.GetPositions()
+	if err != nil {
+		logger.Infof("⚠️ [%s] 止盈止损监控获取持仓失败: %v", at.name, err)
+		return
+	}
+
+	for _, pos := range positions {
+		symbol, _ := pos["symbol"].(string)
+		sideRaw, _ := pos["side"].(string)
+		if symbol == "" || sideRaw == "" {
+			continue
+		}
+		side := strings.ToUpper(sideRaw)
+		key := symbol + "_" + side
+		sltp, ok := sltpMap[key]
+		if !ok {
+			// 跨交易所 symbol 兼容：Hyperliquid 等返回 "ETH" 而数据库存 "ETHUSDT"
+			base := strings.TrimSuffix(symbol, "USDT")
+			sltp, ok = sltpMap[base+"_"+side]
+		}
+		if !ok {
+			continue
+		}
+		stopLoss, takeProfit := sltp[0], sltp[1]
+		if stopLoss <= 0 && takeProfit <= 0 {
+			continue
+		}
+
+		markPrice, _ := pos["markPrice"].(float64)
+		if markPrice <= 0 {
+			continue
+		}
+
+		// 判断是否触发：多头跌破止损/涨破止盈，空头涨破止损/跌破止盈
+		var reason, triggerType string
+		switch side {
+		case "LONG":
+			if stopLoss > 0 && markPrice <= stopLoss {
+				reason, triggerType = "stop_loss", "止损"
+			} else if takeProfit > 0 && markPrice >= takeProfit {
+				reason, triggerType = "take_profit", "止盈"
+			}
+		case "SHORT":
+			if stopLoss > 0 && markPrice >= stopLoss {
+				reason, triggerType = "stop_loss", "止损"
+			} else if takeProfit > 0 && markPrice <= takeProfit {
+				reason, triggerType = "take_profit", "止盈"
+			}
+		}
+		if reason == "" {
+			continue
+		}
+
+		logger.Infof("🎯 [%s] %s触发: %s %s 标记价=%.6f (止损=%.6f 止盈=%.6f)，程序自动平仓",
+			at.name, triggerType, symbol, side, markPrice, stopLoss, takeProfit)
+		at.executeProtectiveClose(symbol, side, reason, triggerType,
+			fmt.Sprintf("标记价=%.6f (止损=%.6f 止盈=%.6f)", markPrice, stopLoss, takeProfit))
 	}
 }
 
@@ -2783,20 +2866,24 @@ func (at *AutoTrader) checkPositionDrawdown() {
 
 // emergencyClosePosition emergency close position function
 func (at *AutoTrader) emergencyClosePosition(symbol, side string) error {
+	SetPendingCloseReason(at.id, symbol, side, "risk_control")
 	switch side {
 	case "long":
 		order, err := at.trader.CloseLong(symbol, 0) // 0 = close all
 		if err != nil {
+			DiscardPendingCloseReason(at.id, symbol, side)
 			return err
 		}
 		logger.Infof("✅ Emergency close long position succeeded, order ID: %v", order["orderId"])
 	case "short":
 		order, err := at.trader.CloseShort(symbol, 0) // 0 = close all
 		if err != nil {
+			DiscardPendingCloseReason(at.id, symbol, side)
 			return err
 		}
 		logger.Infof("✅ Emergency close short position succeeded, order ID: %v", order["orderId"])
 	default:
+		DiscardPendingCloseReason(at.id, symbol, side)
 		return fmt.Errorf("unknown position direction: %s", side)
 	}
 
@@ -3177,6 +3264,56 @@ func extractProviderFromModel(model string) string {
 	return "unknown"
 }
 
+// ============================================================================
+// 平仓原因登记（包级共享：AutoTrader 即时记录与各交易所 OrderSync 兜底落库时消费）
+// ============================================================================
+
+// pendingCloseReasons 暂存程序侧平仓原因，key: traderID|SYMBOL|SIDE（全大写）
+var pendingCloseReasons sync.Map
+
+// SetPendingCloseReason 登记平仓原因（manual/ai_decision/stop_loss/take_profit/profit_giveback/risk_control）
+func SetPendingCloseReason(traderID, symbol, side, reason string) {
+	if traderID == "" || symbol == "" || reason == "" {
+		return
+	}
+	pendingCloseReasons.Store(traderID+"|"+strings.ToUpper(symbol)+"|"+strings.ToUpper(side), reason)
+}
+
+// TakePendingCloseReason 取出并清除已登记的平仓原因；未登记返回空串（落库时回退为 sync）。
+// symbol 兼容带/不带 USDT 计价后缀两种形式。
+func TakePendingCloseReason(traderID, symbol, side string) string {
+	if traderID == "" || symbol == "" {
+		return ""
+	}
+	upperSide := strings.ToUpper(side)
+	if v, ok := pendingCloseReasons.LoadAndDelete(traderID + "|" + strings.ToUpper(symbol) + "|" + upperSide); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	upperSymbol := strings.ToUpper(symbol)
+	if base := strings.TrimSuffix(upperSymbol, "USDT"); base != upperSymbol {
+		if v, ok := pendingCloseReasons.LoadAndDelete(traderID + "|" + base + "|" + upperSide); ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// DiscardPendingCloseReason 丢弃已登记的平仓原因（下单失败时调用，避免误标后续平仓）
+func DiscardPendingCloseReason(traderID, symbol, side string) {
+	if traderID == "" || symbol == "" {
+		return
+	}
+	upperSide := strings.ToUpper(side)
+	pendingCloseReasons.Delete(traderID + "|" + strings.ToUpper(symbol) + "|" + upperSide)
+	if base := strings.TrimSuffix(strings.ToUpper(symbol), "USDT"); base != strings.ToUpper(symbol) {
+		pendingCloseReasons.Delete(traderID + "|" + base + "|" + upperSide)
+	}
+}
+
 // recordPositionChange records position change (create record on open, update record on close)
 func (at *AutoTrader) recordPositionChange(orderID, symbol, side, action string, quantity, price float64, leverage int, fee float64) {
 	if at.store == nil {
@@ -3211,11 +3348,12 @@ func (at *AutoTrader) recordPositionChange(orderID, symbol, side, action string,
 		// 1. If open position exists: close it properly
 		// 2. If no open position (e.g., table cleared): create a closed position record
 		posBuilder := store.NewPositionBuilder(at.store.Position())
+		closeReason := TakePendingCloseReason(at.id, symbol, side)
 		if err := posBuilder.ProcessTrade(
 			at.id, at.exchangeID, at.exchange,
 			symbol, side, action,
 			quantity, price, fee, 0, // realizedPnL will be calculated
-			time.Now(), orderID,
+			time.Now(), orderID, closeReason,
 		); err != nil {
 			logger.Infof("  ⚠️ Failed to process close position: %v", err)
 		} else {

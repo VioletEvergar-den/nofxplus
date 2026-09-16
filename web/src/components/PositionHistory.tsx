@@ -235,8 +235,28 @@ function DirectionStatsCard({ stat, language }: { stat: DirectionStats; language
   )
 }
 
+// 平仓原因徽章映射
+function getCloseReasonBadge(reason: string | undefined, language: 'en' | 'zh') {
+  switch ((reason || '').toLowerCase()) {
+    case 'manual':
+      return { label: language === 'zh' ? '手动平仓' : 'Manual', color: '#B7BDD1' }
+    case 'stop_loss':
+      return { label: language === 'zh' ? '止损' : 'Stop Loss', color: '#F6465D' }
+    case 'take_profit':
+      return { label: language === 'zh' ? '止盈' : 'Take Profit', color: '#0ECB81' }
+    case 'profit_giveback':
+      return { label: language === 'zh' ? '浮盈回撤' : 'Giveback', color: '#F0B90B' }
+    case 'ai_decision':
+      return { label: language === 'zh' ? 'AI 平仓' : 'AI Close', color: '#4A9EFF' }
+    case 'risk_control':
+      return { label: language === 'zh' ? '风控强平' : 'Risk Close', color: '#F6465D' }
+    default:
+      return null
+  }
+}
+
 // Position Row Component
-function PositionRow({ position }: { position: HistoricalPosition }) {
+function PositionRow({ position, language }: { position: HistoricalPosition; language: 'en' | 'zh' }) {
   const side = position.side || ''
   const isLong = side.toUpperCase() === 'LONG'
   const realizedPnl = position.realized_pnl || 0
@@ -325,6 +345,26 @@ function PositionRow({ position }: { position: HistoricalPosition }) {
       {/* Duration */}
       <td className="py-3 px-4 text-center text-sm" style={{ color: '#848E9C' }}>
         {formatDuration(holdingMinutes)}
+      </td>
+
+      {/* Close Reason */}
+      <td className="py-3 px-4 text-center">
+        {(() => {
+          const badge = getCloseReasonBadge(position.close_reason, language)
+          if (!badge) return <span style={{ color: '#848E9C' }}>—</span>
+          return (
+            <span
+              className="px-2 py-0.5 rounded text-xs whitespace-nowrap"
+              style={{
+                background: `${badge.color}1A`,
+                color: badge.color,
+                border: `1px solid ${badge.color}44`,
+              }}
+            >
+              {badge.label}
+            </span>
+          )
+        })()}
       </td>
 
       {/* Exit Time */}
@@ -783,6 +823,12 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
                   {t('positionHistory.duration', language)}
                 </th>
                 <th
+                  className="py-3 px-4 text-center text-xs font-semibold uppercase tracking-wider"
+                  style={{ color: '#848E9C' }}
+                >
+                  {t('positionHistory.closeReason', language)}
+                </th>
+                <th
                   className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider"
                   style={{ color: '#848E9C' }}
                 >
@@ -792,7 +838,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
             </thead>
             <tbody>
               {filteredPositions.map((position) => (
-                <PositionRow key={position.id} position={position} />
+                <PositionRow key={position.id} position={position} language={language} />
               ))}
             </tbody>
           </table>

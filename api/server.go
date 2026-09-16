@@ -1609,17 +1609,22 @@ func (s *Server) handleClosePosition(c *gin.Context) {
 	var result map[string]interface{}
 	var closeErr error
 
+	// 登记手动平仓原因，订单同步落库时写入持仓记录
+	trader.SetPendingCloseReason(traderID, req.Symbol, req.Side, "manual")
+
 	switch req.Side {
 	case "LONG":
 		result, closeErr = tempTrader.CloseLong(req.Symbol, 0) // 0 means close all
 	case "SHORT":
 		result, closeErr = tempTrader.CloseShort(req.Symbol, 0) // 0 means close all
 	default:
+		trader.DiscardPendingCloseReason(traderID, req.Symbol, req.Side)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "side must be LONG or SHORT"})
 		return
 	}
 
 	if closeErr != nil {
+		trader.DiscardPendingCloseReason(traderID, req.Symbol, req.Side)
 		logger.Infof("❌ Close position failed: symbol=%s, side=%s, error=%v", req.Symbol, req.Side, closeErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to close position: %v", closeErr)})
 		return
