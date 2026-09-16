@@ -104,6 +104,10 @@ export interface TraderInfo {
   show_in_competition?: boolean
   strategy_id?: string
   strategy_name?: string
+  strategy_coin_source?: {
+    source_type: 'static' | 'coinpool' | 'oi_top' | 'mixed'
+    static_coins?: string[]
+  }
   trading_mode?: string // 交易模式: "" (默认/balanced), "aggressive", "conservative", "scalping"
   custom_prompt?: string
   use_coin_pool?: boolean

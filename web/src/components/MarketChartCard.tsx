@@ -9,6 +9,7 @@ interface MarketChartCardProps {
   selectedSymbol?: string // 从外部选择的币种
   updateKey?: number // 强制更新的 key
   exchangeId?: string // 交易所ID
+  defaultSymbol?: string // 策略静态币种（图表默认联动）
 }
 
 type Interval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
@@ -46,7 +47,7 @@ function getMarketTypeFromExchange(exchangeId: string | undefined): MarketType {
 }
 
 // 行情图表卡片（独立组件，从 ChartTabs 拆分而来）
-export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeId }: MarketChartCardProps) {
+export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeId, defaultSymbol }: MarketChartCardProps) {
   const { language } = useLanguage()
   const [chartSymbol, setChartSymbol] = useState<string>('BTC')
   const [interval, setInterval] = useState<Interval>('5m')
@@ -56,6 +57,16 @@ export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeI
   const [showDropdown, setShowDropdown] = useState(false)
   const [searchFilter, setSearchFilter] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
+  // 用户是否手动选择过币种（手动选择后不再跟随策略默认币）
+  const userOverrideRef = useRef(false)
+
+  // 按市场类型归一化币种符号：hyperliquid 用短符号（BTC），crypto 用完整符号（BTCUSDT）
+  const normalizeSymbol = (symbol: string | undefined, type: MarketType): string | undefined => {
+    if (!symbol) return undefined
+    const upper = symbol.toUpperCase()
+    if (type === 'hyperliquid') return upper.replace(/USDT$|USD$|PERP$/, '')
+    return upper.endsWith('USDT') ? upper : `${upper}USDT`
+  }
 
   // 当交易所ID变化时，自动切换市场类型
   useEffect(() => {
@@ -101,10 +112,26 @@ export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeI
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // 切换交易员时重置手动选择状态，重新跟随策略默认币
+  useEffect(() => {
+    userOverrideRef.current = false
+  }, [traderId])
+
+  // 策略默认币种联动：用户未手动选择过币种时，跟随策略静态币种
+  useEffect(() => {
+    const normalized = normalizeSymbol(defaultSymbol, marketType)
+    if (normalized && !userOverrideRef.current) {
+      setChartSymbol(normalized)
+    }
+  }, [defaultSymbol, marketType])
+
   // 切换市场类型时更新默认符号
   const handleMarketTypeChange = (type: MarketType) => {
+    userOverrideRef.current = true
     setMarketType(type)
-    setChartSymbol(MARKET_CONFIG[type].defaultSymbol)
+    // 保持当前币种的基础资产并按新市场归一化，无有效币种时回退市场默认币
+    const baseAsset = chartSymbol.replace(/USDT$|USD$|BUSD$/, '')
+    setChartSymbol(normalizeSymbol(baseAsset, type) || MARKET_CONFIG[type].defaultSymbol)
     setShowDropdown(false)
   }
 
@@ -124,6 +151,7 @@ export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeI
   const handleSymbolSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (symbolInput.trim()) {
+      userOverrideRef.current = true
       let symbol = symbolInput.trim().toUpperCase()
       // 加密货币自动加 USDT 后缀
       if (marketType === 'crypto' && !symbol.endsWith('USDT')) {
@@ -221,7 +249,7 @@ export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeI
                           {categorySymbols.map(s => (
                             <button
                               key={s.symbol}
-                              onClick={() => { setChartSymbol(s.symbol); setShowDropdown(false); setSearchFilter('') }}
+                              onClick={() => { userOverrideRef.current = true; setChartSymbol(s.symbol); setShowDropdown(false); setSearchFilter('') }}
                               className={`w-full px-3 py-1.5 text-left text-[12px] hover:bg-[rgba(240,185,11,0.1)] transition-all ${
                                 chartSymbol === s.symbol ? 'text-[#F0B90B]' : 'text-[#EAECEF]'
                               }`}

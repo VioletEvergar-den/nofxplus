@@ -2162,26 +2162,41 @@ func (s *Server) handleTraderList(c *gin.Context) {
 			}
 		}
 
-		// Get strategy name if strategy_id is set
+		// Get strategy name and coin source if strategy_id is set
 		var strategyName string
+		var coinSource interface{}
 		if trader.StrategyID != "" {
 			if strategy, err := s.store.Strategy().Get(userID, trader.StrategyID); err == nil {
 				strategyName = strategy.Name
+				// 解析策略配置中的币种来源，供前端看板图表联动
+				var cfg struct {
+					CoinSource struct {
+						SourceType  string   `json:"source_type"`
+						StaticCoins []string `json:"static_coins"`
+					} `json:"coin_source"`
+				}
+				if err := json.Unmarshal([]byte(strategy.Config), &cfg); err == nil {
+					coinSource = map[string]interface{}{
+						"source_type":  cfg.CoinSource.SourceType,
+						"static_coins": cfg.CoinSource.StaticCoins,
+					}
+				}
 			}
 		}
 
 		// Return complete AIModelID (e.g. "admin_deepseek"), don't truncate
 		// Frontend needs complete ID to verify model exists (consistent with handleGetTraderConfig)
 		result = append(result, map[string]interface{}{
-			"trader_id":           trader.ID,
-			"trader_name":         trader.Name,
-			"ai_model":            trader.AIModelID, // Use complete ID
-			"exchange_id":         trader.ExchangeID,
-			"is_running":          isRunning,
-			"show_in_competition": trader.ShowInCompetition,
-			"initial_balance":     trader.InitialBalance,
-			"strategy_id":         trader.StrategyID,
-			"strategy_name":       strategyName,
+			"trader_id":            trader.ID,
+			"trader_name":          trader.Name,
+			"ai_model":             trader.AIModelID, // Use complete ID
+			"exchange_id":          trader.ExchangeID,
+			"is_running":           isRunning,
+			"show_in_competition":  trader.ShowInCompetition,
+			"initial_balance":      trader.InitialBalance,
+			"strategy_id":          trader.StrategyID,
+			"strategy_name":        strategyName,
+			"strategy_coin_source": coinSource,
 		})
 	}
 

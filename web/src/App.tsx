@@ -820,6 +820,15 @@ function TraderDetailsPage({
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false)
   const [showAnalysisHelp, setShowAnalysisHelp] = useState<boolean>(false)
 
+  // 策略静态币种：用于行情图表默认联动（static/mixed 模式取第一个自定义币种）
+  const strategyCoins = selectedTrader?.strategy_coin_source?.static_coins || []
+  const strategyDefaultSymbol =
+    (selectedTrader?.strategy_coin_source?.source_type === 'static' ||
+      selectedTrader?.strategy_coin_source?.source_type === 'mixed') &&
+    strategyCoins.length > 0
+      ? strategyCoins[0]
+      : undefined
+
   // Current positions pagination
   const [positionsPageSize, setPositionsPageSize] = useState<number>(20)
   const [positionsCurrentPage, setPositionsCurrentPage] = useState<number>(1)
@@ -1434,6 +1443,7 @@ function TraderDetailsPage({
               selectedTrader.exchange_id,
               exchanges
             )}
+            defaultSymbol={strategyDefaultSymbol}
           />
         </div>
 
