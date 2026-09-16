@@ -150,10 +150,39 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [mode, setMode] = useState<'generate' | 'modify'>(currentConfig ? 'modify' : 'generate')
+  // running 步骤的本地起始时间（role → 时间戳），用于显示已用时长
+  const stepStartRef = useRef<Map<string, number>>(new Map())
+  const [nowTick, setNowTick] = useState(Date.now())
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const councilIdRef = useRef<string | null>(null)
 
-  const mode: 'generate' | 'modify' = currentConfig ? 'modify' : 'generate'
+  // 弹窗打开时按当前配置重置模式
+  useEffect(() => {
+    if (open) setMode(currentConfig ? 'modify' : 'generate')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // 运行中每秒刷新计时显示
+  useEffect(() => {
+    if (council?.status !== 'running') return
+    const timer = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [council?.status])
+
+  // 记录/清理 running 步骤的本地起始时间
+  const applyCouncilData = useCallback((data: CouncilState) => {
+    const now = Date.now()
+    const map = stepStartRef.current
+    for (const s of data.steps) {
+      if (s.status === 'running') {
+        if (!map.has(s.role)) map.set(s.role, now)
+      } else {
+        map.delete(s.role)
+      }
+    }
+    setCouncil(data)
+  }, [])
 
   // 清除轮询
   const stopPolling = useCallback(() => {
@@ -174,14 +203,14 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
           })
           if (!resp.ok) return
           const data: CouncilState = await resp.json()
-          setCouncil(data)
+          applyCouncilData(data)
           if (data.status !== 'running') stopPolling()
         } catch {
           // 网络抖动忽略，下一轮重试
         }
       }, 2000)
     },
-    [token, stopPolling]
+    [token, stopPolling, applyCouncilData]
   )
 
   // 弹窗关闭时停止轮询
@@ -287,10 +316,29 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
           {/* 表单阶段 */}
           {!council && (
             <>
+              {/* 模式切换：生成 / 修改 */}
               <div className="flex items-center gap-2">
-                <span className="px-2 py-1 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                  {t(mode === 'modify' ? 'aiCouncil.modeModify' : 'aiCouncil.modeGenerate', language)}
-                </span>
+                <span className="text-[11px] text-[#848E9C] shrink-0">{t('aiCouncil.modeLabel', language)}</span>
+                <div className="flex rounded-lg overflow-hidden" style={{ background: '#1E2329', border: '1px solid #2B3139' }}>
+                  <button
+                    onClick={() => setMode('generate')}
+                    className={`px-3 py-1 text-[11px] transition-colors ${
+                      mode === 'generate' ? 'bg-amber-500/15 text-amber-400 font-medium' : 'text-[#848E9C] hover:text-[#EAECEF]'
+                    }`}
+                  >
+                    {t('aiCouncil.modeGenerate', language)}
+                  </button>
+                  <button
+                    onClick={() => setMode('modify')}
+                    disabled={!currentConfig}
+                    title={!currentConfig ? (language === 'zh' ? '当前策略为空，无法修改' : 'No current strategy to modify') : undefined}
+                    className={`px-3 py-1 text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      mode === 'modify' ? 'bg-amber-500/15 text-amber-400 font-medium' : 'text-[#848E9C] hover:text-[#EAECEF]'
+                    }`}
+                  >
+                    {t('aiCouncil.modeModify', language)}
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -357,7 +405,12 @@ export function StrategyAICouncilModal({ open, onClose, onApply, aiModels, defau
                               {t(`aiCouncil.roles.${step.role}`, language)}
                             </div>
                             <div className="flex items-center gap-2">
-                              {step.duration_ms ? (
+                              {step.status === 'running' && stepStartRef.current.has(step.role) ? (
+                                <span className="flex items-center gap-0.5 text-[10px] text-amber-400 tabular-nums">
+                                  <Timer className="w-3 h-3" />
+                                  {Math.max(0, Math.floor((nowTick - (stepStartRef.current.get(step.role) || 0)) / 1000))}s
+                                </span>
+                              ) : step.duration_ms ? (
                                 <span className="flex items-center gap-0.5 text-[10px] text-[#848E9C]">
                                   <Timer className="w-3 h-3" />
                                   {(step.duration_ms / 1000).toFixed(0)}s

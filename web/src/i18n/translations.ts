@@ -1218,6 +1218,7 @@ export const translations = {
       subtitle: '8 expert roles collaborate to generate / modify your strategy',
       modeGenerate: 'Generate mode (based on default template)',
       modeModify: 'Modify mode (based on current strategy)',
+      modeLabel: 'Mode',
       intentLabel: 'Strategy Intent',
       intentPlaceholder:
         'Describe your requirements, e.g.:\n- Preference for long-term or short-term?\n- Specific coins of interest? (e.g. BTC, SOL)\n- Recent market observations / news?\n- Risk appetite and expected return style?',
@@ -2416,6 +2417,7 @@ export const translations = {
       subtitle: '8 位专家角色协作生成 / 修改你的策略',
       modeGenerate: '生成模式（基于默认模板）',
       modeModify: '修改模式（基于当前策略）',
+      modeLabel: '模式',
       intentLabel: '策略意图',
       intentPlaceholder:
         '描述你的需求，例如：\n- 希望长线还是短线？\n- 有没有特定关注的币种？（如 BTC、SOL）\n- 近期行情观察 / 消息面？（AI 会联网搜索验证）\n- 风险偏好与预期收益风格？',

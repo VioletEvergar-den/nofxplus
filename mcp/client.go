@@ -125,10 +125,21 @@ func NewClient(opts ...ClientOption) AIClient {
 	return client
 }
 
+// SanitizeBaseURL 清洗用户粘贴的 API URL：去除首尾空格、反引号、引号、换行等格式字符
+// （用户从 Markdown/文档复制 URL 时常带入 ` 或 " 导致请求发往无效地址）
+func SanitizeBaseURL(url string) string {
+	return strings.TrimFunc(url, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\r' || r == '\n' || r == '`' || r == '"' || r == '\''
+	})
+}
+
 // SetCustomAPI sets custom OpenAI-compatible API
 func (client *Client) SetAPIKey(apiKey, apiURL, customModel string) {
 	client.Provider = ProviderCustom
 	client.APIKey = apiKey
+
+	// 清洗粘贴带入的格式字符，再判断 # 后缀
+	apiURL = SanitizeBaseURL(apiURL)
 
 	// Check if URL ends with #, if so use full URL (without appending /chat/completions)
 	if strings.HasSuffix(apiURL, "#") {
@@ -136,7 +147,8 @@ func (client *Client) SetAPIKey(apiKey, apiURL, customModel string) {
 		client.UseFullURL = true
 	} else {
 		client.BaseURL = apiURL
-		client.UseFullURL = false
+		// URL 已包含 /chat/completions 端点时直接使用，避免重复拼接
+		client.UseFullURL = strings.HasSuffix(apiURL, "/chat/completions")
 	}
 
 	client.Model = customModel

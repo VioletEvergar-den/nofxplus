@@ -15,6 +15,7 @@ import (
 	"nofx/backtest"
 	"nofx/logger"
 	"nofx/market"
+	"nofx/mcp"
 	"nofx/provider"
 	"nofx/store"
 
@@ -904,7 +905,7 @@ func (s *Server) hydrateBacktestAIConfig(cfg *backtest.BacktestConfig) error {
 	}
 	cfg.AICfg.Provider = provider
 	cfg.AICfg.APIKey = apiKey
-	cfg.AICfg.BaseURL = strings.TrimSpace(model.CustomAPIURL)
+	cfg.AICfg.BaseURL = mcp.SanitizeBaseURL(model.CustomAPIURL)
 	modelName := strings.TrimSpace(model.CustomModelName)
 	if cfg.AICfg.Model == "" {
 		cfg.AICfg.Model = modelName
