@@ -14,6 +14,7 @@ import (
 	"nofx/logger"
 	"nofx/manager"
 	"nofx/market"
+	"nofx/mcp"
 	"nofx/provider/hyperliquid"
 	"nofx/store"
 	"nofx/trader"
