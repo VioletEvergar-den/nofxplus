@@ -1258,6 +1258,21 @@ func GetPromptSectionsByModeAndLang(mode, lang string) PromptSectionsConfig {
 	return PromptTemplates["balanced"]["en"]
 }
 
+// PromptSectionsMatchTemplate returns true if the prompt sections exactly match
+// one of the built-in TradingMode templates. Used to decide whether the sections
+// are user-customized (kept as-is) or still the untouched default (safe to swap
+// when the TradingMode changes).
+func (c *StrategyConfig) PromptSectionsMatchTemplate() bool {
+	for _, m := range PromptTemplates {
+		for _, tmpl := range m {
+			if c.PromptSections == tmpl {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *StrategyConfig) SetConfigPromptSectionsByModeAndLang(mode, lang string) {
 	c.PromptSections = GetPromptSectionsByModeAndLang(mode, lang)
 }

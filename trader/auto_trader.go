@@ -354,7 +354,14 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 	if strings.Contains(strings.ToLower(config.StrategyConfig.PromptSections.RoleDefinition), "交易") {
 		strategyLang = "zh"
 	}
-	config.StrategyConfig.SetConfigPromptSectionsByModeAndLang(config.TradingMode, strategyLang)
+	// Follow the TradingMode template only when the strategy still carries an
+	// untouched built-in template. User-customized prompt sections (edited in the
+	// strategy lab) are the trader's own strategy prompt and must not be overridden.
+	if config.StrategyConfig.PromptSectionsMatchTemplate() {
+		config.StrategyConfig.SetConfigPromptSectionsByModeAndLang(config.TradingMode, strategyLang)
+	} else {
+		logger.Infof("✓ [%s] Keeping customized prompt sections from strategy (not overridden by TradingMode template)", config.Name)
+	}
 	logger.Infof("✓ [%s] Using strategy engine (strategy configuration loaded)", config.Name)
 
 	at := &AutoTrader{

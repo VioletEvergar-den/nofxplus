@@ -980,10 +980,20 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 		sb.WriteString("\n\n")
 	}
 
-	// 5. Available indicators
+	// 5. Custom trading strategy prompt (user layer, editable by trader)
+	// Placed at the end of the user layer: it shapes trading style/preferences,
+	// while system-level sections below (risk control + output format) stay untouchable.
+	if e.config.CustomPrompt != "" {
+		sb.WriteString("# 📌 Personalized Trading Strategy\n\n")
+		sb.WriteString(e.config.CustomPrompt)
+		sb.WriteString("\n\n")
+		sb.WriteString("Note: The above personalized strategy defines the trader's style and preferences, and takes precedence over the default strategy sections above when they conflict. It must not violate the system-level sections below (risk control parameters and output format), which are enforced by the system.\n\n")
+	}
+
+	// 6. Available indicators
 	e.config.AvailableIndicatorsString(&sb, string(lang))
 
-	// 6. Hard constraints (risk control)
+	// 7. Hard constraints (risk control) - system layer, not user-editable
 	btcEthPosValueRatio := riskControl.BTCETHMaxPositionValueRatio
 	if btcEthPosValueRatio <= 0 {
 		btcEthPosValueRatio = config.DefaultBTCETHPosRatio
@@ -1019,12 +1029,12 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 		accountEquity, btcEthPosValueRatio, accountEquity*btcEthPosValueRatio))
 	sb.WriteString("- **DO NOT** just use available_balance as position_size_usd. Use the Position Value Limits!\n\n")
 
-	// 7. Schema prompt (Explain the fields defined in the schema)
+	// 8. Schema prompt (Explain the fields defined in the schema) - system layer
 	schemaPrompt := GetSchemaPrompt(lang)
 	sb.WriteString(schemaPrompt)
 	sb.WriteString("\n\n")
 
-	// 7. Output format
+	// 9. Output format - system layer, must stay last for best format compliance
 	sb.WriteString("# Additional Output Format (Strictly Follow)\n\n")
 	sb.WriteString("**Must use XML tags <reasoning> and <decision> to separate chain of thought and decision JSON, " +
 		"Do not use the ~ (tilde) symbol or any range/approximate notation in your JSON output. All numbers must be precise values. " +
@@ -1049,14 +1059,6 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
 	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
 	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
-
-	// 8. Custom Prompt
-	if e.config.CustomPrompt != "" {
-		sb.WriteString("# 📌 Personalized Trading Strategy\n\n")
-		sb.WriteString(e.config.CustomPrompt)
-		sb.WriteString("\n\n")
-		sb.WriteString("Note: The above personalized strategy is a supplement to the basic rules and cannot violate the basic risk control principles.\n")
-	}
 
 	return sb.String()
 }
