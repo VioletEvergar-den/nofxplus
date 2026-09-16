@@ -75,5 +75,6 @@ func get(ctx context.Context, path string, paramsMap map[string]string) (string,
 }
 
 var client = &http.Client{
-	Timeout: 30 * time.Second,
+	// CoinAnk 为外部行情源，超时不宜过长：挂掉时快速失败走回退链路，避免前端请求被拖死
+	Timeout: 10 * time.Second,
 }

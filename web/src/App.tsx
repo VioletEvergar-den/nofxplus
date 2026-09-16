@@ -1428,7 +1428,7 @@ function TraderDetailsPage({
       )}
 
       {/* 主要内容区：第一行 = 账户曲线(3/5) + 最近决策(2/5)，第二行 = 行情图表(2/5) + 当前持仓(3/5) */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
         {/* 行情图表（第二行左，2/5 宽） */}
         <div
           ref={chartSectionRef}
