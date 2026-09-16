@@ -168,6 +168,10 @@ type AutoTrader struct {
 	// Prompt optimization (genetic evolution)
 	promptOptimizer *backtest.PromptOptimizer // Evolves prompt strategies based on performance
 	promptVariantID string                    // Current prompt variant ID
+
+	// 浮盈回撤保护模式（从 AutoTraderConfig 拷贝）: off/soft/hard
+	GivebackMode    string
+	GivebackHardPct float64
 	// Analysis systems (same as backtests)
 	feedbackGenerator   *backtest.FeedbackGenerator   // Analyzes trading feedback
 	factorOptimizer     *backtest.FactorOptimizer     // Analyzes performance factors
@@ -377,6 +381,8 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		exchangeID:             config.ExchangeID,
 		showInCompetition:      config.ShowInCompetition,
 		config:                 config,
+		GivebackMode:           config.GivebackMode,
+		GivebackHardPct:        config.GivebackHardPct,
 		trader:                 trader,
 		mcpClient:              mcpClient,
 		store:                  st,
