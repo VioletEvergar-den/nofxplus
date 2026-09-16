@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -255,12 +256,17 @@ payload 字段：
 	case "timeframe_engineer":
 		return base + `
 ## 你的任务（周期指标工程师）
-基于预期持仓周期选择 K 线时间周期组合与技术指标（这是你的专业：把持仓周期翻译成数据配置）。
+你会收到「多周期真实K线数据」：周K线、日K线、4小时K线三个周期，各自独立一节（区间统计、EMA/RSI/MACD/ATR 快照、最近5根K线）。
+
+分析要求：
+- 必须对周K、日K、4小时K 每个时间区间分别给出独立趋势判断（不许混在一起笼统描述），并标注各周期之间的共振或矛盾。
+- 基于预期持仓周期，把真实多周期走势翻译成 K 线时间周期组合与技术指标配置。
 
 合法时间周期（只能从中选择）: "1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d"
 持仓周期 → 参考组合: scalp→1m/3m/5m 主周期; intraday→5m/15m/1h; swing→15m/1h/4h; position→1h/4h/1d
 
 payload 字段：
+- multi_tf_views: object[]，三个周期每个都必须有: {"timeframe": "1w|1d|4h", "trend": "up|down|range", "key_evidence": "该周期关键证据（EMA排列/RSI/MACD/价格结构，1~2句）"}
 - primary_timeframe: 主周期（上述枚举之一）
 - primary_count: 主周期K线数量，10~500（通常 30~100）
 - enable_multi_timeframe: boolean
@@ -274,7 +280,7 @@ payload 字段：
   - enable_atr: boolean, atr_periods: number[]（如 [14]）
   - enable_boll: boolean, boll_periods: number[]（如 [20]）
   - enable_volume: boolean, enable_oi: boolean, enable_funding_rate: boolean
-- rationale: 选择理由（1~2 句）
+- rationale: 选择理由（1~2 句，需引用多周期判断结论）
 - 短线策略必须有 EMA/RSI 类快指标；波段以上建议 MACD/BOLL；OI 与成交量建议常开。`
 	case "coin_planner":
 		return base + `
@@ -827,8 +833,32 @@ func (s *Server) runCouncil(st *councilState, modelID string, base *store.Strate
 						all = append(all, results...)
 					}
 				}
+				// 旧新闻过滤：只保留 30 天内的结果；无日期结果保留
+				cutoff := time.Now().AddDate(0, 0, -30)
+				fresh := all[:0]
 				for _, r := range all {
-					sourceTitles = append(sourceTitles, r.Title)
+					if t, ok := parseCouncilDate(r.PublishedDate); ok && t.Before(cutoff) {
+						continue
+					}
+					fresh = append(fresh, r)
+				}
+				all = fresh
+				// 按发布时间降序（新的在前）
+				sort.Slice(all, func(i, j int) bool {
+					ti, oki := parseCouncilDate(all[i].PublishedDate)
+					tj, okj := parseCouncilDate(all[j].PublishedDate)
+					if oki != okj {
+						return oki
+					}
+					return oki && ti.After(tj)
+				})
+				for _, r := range all {
+					// 来源 chip 带上发布日期，方便识别新旧
+					date := ""
+					if t, ok := parseCouncilDate(r.PublishedDate); ok {
+						date = t.Format("01-02") + " "
+					}
+					sourceTitles = append(sourceTitles, date+r.Title)
 				}
 				return BuildBrief(all)
 			}
@@ -916,12 +946,17 @@ func (s *Server) runCouncil(st *councilState, modelID string, base *store.Strate
 	}
 
 	// 周期指标工程师 与 币种来源规划师 可并行（互不依赖）
+	// 周期指标工程师额外获得多周期真实K线数据（周K/日K/4小时K，各自独立一节）
 	upstreamR2 := buildUpstreamContext("market_analyst", "coin_researcher", "chief_trader", "strategy_architect")
+	klineSection := buildMultiTimeframeKlineSection(extractCouncilSymbol(st.Intent))
+	if klineSection != "" {
+		klineSection = "## 多周期真实K线数据（逐周期独立分析，每个时间区间单独判断）\n" + klineSection
+	}
 	var errEngineer, errCoinPlanner error
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, errEngineer = runOneRole("timeframe_engineer", intentBlock+"\n"+upstreamR2+"\n请给出周期与指标配置。")
+		_, errEngineer = runOneRole("timeframe_engineer", intentBlock+"\n"+upstreamR2+"\n"+klineSection+"\n请先对周K/日K/4小时K分别给出趋势判断，再给出周期与指标配置。")
 	}()
 	go func() {
 		defer wg.Done()

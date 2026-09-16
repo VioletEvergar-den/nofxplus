@@ -243,24 +243,6 @@ func (s *Server) handleDeleteStrategy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Strategy deleted successfully"})
 }
 
-// handleActivateStrategy Activate strategy
-func (s *Server) handleActivateStrategy(c *gin.Context) {
-	userID := c.GetString("user_id")
-	strategyID := c.Param("id")
-
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	if err := s.store.Strategy().SetActive(userID, strategyID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to activate strategy: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Strategy activated successfully"})
-}
-
 // handleDuplicateStrategy Duplicate strategy
 func (s *Server) handleDuplicateStrategy(c *gin.Context) {
 	userID := c.GetString("user_id")
@@ -289,39 +271,6 @@ func (s *Server) handleDuplicateStrategy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":      newID,
 		"message": "Strategy duplicated successfully",
-	})
-}
-
-// handleGetActiveStrategy Get currently active strategy
-func (s *Server) handleGetActiveStrategy(c *gin.Context) {
-	userID := c.GetString("user_id")
-
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	strategy, err := s.store.Strategy().GetActive(userID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "No active strategy"})
-		return
-	}
-
-	var config store.StrategyConfig
-	if err := json.Unmarshal([]byte(strategy.Config), &config); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse strategy config: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"id":          strategy.ID,
-		"name":        strategy.Name,
-		"description": strategy.Description,
-		"is_active":   strategy.IsActive,
-		"is_default":  strategy.IsDefault,
-		"config":      config,
-		"created_at":  strategy.CreatedAt,
-		"updated_at":  strategy.UpdatedAt,
 	})
 }
 

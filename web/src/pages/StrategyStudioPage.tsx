@@ -5,7 +5,6 @@ import {
   Plus,
   Copy,
   Trash2,
-  Check,
   ChevronDown,
   ChevronRight,
   Settings,
@@ -50,6 +49,8 @@ export function StrategyStudioPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasChanges, setHasChanges] = useState(false)
+  // 会诊策略应用后短暂高亮编辑器，让用户看到策略填到哪里
+  const [editorHighlight, setEditorHighlight] = useState(false)
 
   // AI Models for test run
   const [aiModels, setAiModels] = useState<AIModel[]>([])
@@ -137,12 +138,8 @@ export function StrategyStudioPage() {
       const data = await response.json()
       setStrategies(data.strategies || [])
 
-      // Select active or first strategy
-      const active = data.strategies?.find((s: Strategy) => s.is_active)
-      if (active) {
-        setSelectedStrategy(active)
-        setEditingConfig(active.config)
-      } else if (data.strategies?.length > 0) {
+      // Select first strategy by default
+      if (data.strategies?.length > 0) {
         setSelectedStrategy(data.strategies[0])
         setEditingConfig(data.strategies[0].config)
       }
@@ -255,21 +252,6 @@ export function StrategyStudioPage() {
         }),
       })
       if (!response.ok) throw new Error('Failed to duplicate strategy')
-      await fetchStrategies()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
-    }
-  }
-
-  // Activate strategy
-  const handleActivateStrategy = async (id: string) => {
-    if (!token) return
-    try {
-      const response = await fetch(`${API_BASE}/api/strategies/${id}/activate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!response.ok) throw new Error('Failed to activate strategy')
       await fetchStrategies()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -451,8 +433,6 @@ export function StrategyStudioPage() {
       customPrompt: { zh: '附加提示', en: 'Extra Prompt' },
       save: { zh: '保存', en: 'Save' },
       saving: { zh: '保存中...', en: 'Saving...' },
-      activate: { zh: '激活', en: 'Activate' },
-      active: { zh: '激活中', en: 'Active' },
       default: { zh: '默认', en: 'Default' },
       promptPreview: { zh: 'Prompt 预览', en: 'Prompt Preview' },
       aiTestRun: { zh: 'AI 测试', en: 'AI Test' },
@@ -670,11 +650,6 @@ export function StrategyStudioPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 mt-1">
-                    {strategy.is_active && (
-                      <span className="px-1.5 py-0.5 text-[10px] rounded" style={{ background: 'rgba(14, 203, 129, 0.15)', color: '#0ECB81' }}>
-                        {t('active')}
-                      </span>
-                    )}
                     {strategy.is_default && (
                       <span className="px-1.5 py-0.5 text-[10px] rounded" style={{ background: 'rgba(240, 185, 11, 0.15)', color: '#F0B90B' }}>
                         {t('default')}
@@ -688,7 +663,10 @@ export function StrategyStudioPage() {
         </div>
 
         {/* Middle Column - Config Editor */}
-        <div className="flex-1 min-w-0 overflow-y-auto border-r" style={{ borderColor: '#2B3139' }}>
+        <div
+          className="flex-1 min-w-0 overflow-y-auto border-r transition-all duration-700"
+          style={{ borderColor: '#2B3139', boxShadow: editorHighlight ? 'inset 0 0 0 2px rgba(240,185,11,0.55)' : 'none' }}
+        >
           {selectedStrategy && editingConfig ? (
             <div className="p-4">
               {/* Strategy Name & Actions */}
@@ -719,16 +697,6 @@ export function StrategyStudioPage() {
                     <Sparkles className="w-3 h-3" />
                     {t('aiCouncil.title')}
                   </button>
-                  {!selectedStrategy.is_active && (
-                    <button
-                      onClick={() => handleActivateStrategy(selectedStrategy.id)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-colors"
-                      style={{ background: 'rgba(14, 203, 129, 0.1)', border: '1px solid rgba(14, 203, 129, 0.3)', color: '#0ECB81' }}
-                    >
-                      <Check className="w-3 h-3" />
-                      {t('activate')}
-                    </button>
-                  )}
                   {!selectedStrategy.is_default && (
                     <button
                       onClick={handleSaveStrategy}
@@ -1065,6 +1033,12 @@ export function StrategyStudioPage() {
             setEditingConfig(config)
           }
           setHasChanges(true)
+          // 明确反馈：策略填入了中间编辑器，尚未保存
+          notify.success(language === 'zh'
+            ? '会诊策略已填入中间编辑器（见高亮区域），请检查后点击「保存」'
+            : 'Council strategy loaded into the editor (highlighted). Review and click "Save"')
+          setEditorHighlight(true)
+          window.setTimeout(() => setEditorHighlight(false), 2600)
         }}
         aiModels={aiModels}
         defaultModelId={selectedModelId}

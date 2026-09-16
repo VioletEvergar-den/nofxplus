@@ -1366,31 +1366,6 @@ func (s *StrategyStore) Get(userID, id string) (*Strategy, error) {
 	return &st, nil
 }
 
-// GetActive get user's currently active strategy
-func (s *StrategyStore) GetActive(userID string) (*Strategy, error) {
-	var st Strategy
-	var createdAt, updatedAt string
-	err := s.db.QueryRow(`
-		SELECT id, user_id, name, description, is_active, is_default, config, created_at, updated_at
-		FROM strategies
-		WHERE user_id = ? AND is_active = 1
-	`, userID).Scan(
-		&st.ID, &st.UserID, &st.Name, &st.Description,
-		&st.IsActive, &st.IsDefault, &st.Config,
-		&createdAt, &updatedAt,
-	)
-	if err == sql.ErrNoRows {
-		// no active strategy, return system default strategy
-		return s.GetDefault()
-	}
-	if err != nil {
-		return nil, err
-	}
-	st.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
-	st.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
-	return &st, nil
-}
-
 // GetDefault get system default strategy
 func (s *StrategyStore) GetDefault() (*Strategy, error) {
 	var st Strategy
@@ -1411,32 +1386,6 @@ func (s *StrategyStore) GetDefault() (*Strategy, error) {
 	st.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 	st.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
 	return &st, nil
-}
-
-// SetActive set active strategy (will first deactivate other strategies)
-func (s *StrategyStore) SetActive(userID, strategyID string) error {
-	// begin transaction
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	// first deactivate all strategies for the user
-	_, err = tx.Exec(`UPDATE strategies SET is_active = 0 WHERE user_id = ?`, userID)
-	if err != nil {
-		return err
-	}
-
-	// activate specified strategy
-	_, err = tx.Exec(`UPDATE strategies SET is_active = 1 WHERE id = ? AND (user_id = ? OR is_default = 1)`, strategyID, userID)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit()
 }
 
 // Duplicate duplicate a strategy (used to create custom strategy based on default strategy)

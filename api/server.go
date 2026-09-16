@@ -176,7 +176,6 @@ func (s *Server) setupRoutes() {
 
 			// Strategy management
 			protected.GET("/strategies", s.handleGetStrategies)
-			protected.GET("/strategies/active", s.handleGetActiveStrategy)
 			protected.GET("/strategies/default-config", s.handleGetDefaultStrategyConfig)
 			protected.POST("/strategies/preview-prompt", s.handlePreviewPrompt)
 			protected.POST("/strategies/test-run", s.handleStrategyTestRun)
@@ -187,7 +186,6 @@ func (s *Server) setupRoutes() {
 			protected.POST("/strategies", s.handleCreateStrategy)
 			protected.PUT("/strategies/:id", s.handleUpdateStrategy)
 			protected.DELETE("/strategies/:id", s.handleDeleteStrategy)
-			protected.POST("/strategies/:id/activate", s.handleActivateStrategy)
 			protected.POST("/strategies/:id/duplicate", s.handleDuplicateStrategy)
 
 			// Debate Arena

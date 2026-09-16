@@ -93,12 +93,9 @@ export function TraderConfigModal({
         if (result.success && result.data?.strategies) {
           const strategyList = result.data.strategies
           setStrategies(strategyList)
-          // 如果没有选择策略，默认选中激活的策略
+          // 如果没有选择策略，默认选中第一个
           if (!formData.strategy_id && !isEditMode) {
-            const activeStrategy = strategyList.find(s => s.is_active)
-            if (activeStrategy) {
-              setFormData(prev => ({ ...prev, strategy_id: activeStrategy.id }))
-            } else if (strategyList.length > 0) {
+            if (strategyList.length > 0) {
               setFormData(prev => ({ ...prev, strategy_id: strategyList[0].id }))
             }
           }
@@ -372,7 +369,6 @@ export function TraderConfigModal({
                   {strategies.map((strategy) => (
                     <option key={strategy.id} value={strategy.id}>
                       {strategy.name}
-                      {strategy.is_active ? ' (当前激活)' : ''}
                       {strategy.is_default ? ' [默认]' : ''}
                     </option>
                   ))}
@@ -391,11 +387,6 @@ export function TraderConfigModal({
                     <span className="text-[#F0B90B] text-sm font-medium">
                       策略详情
                     </span>
-                    {selectedStrategy.is_active && (
-                      <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded">
-                        激活中
-                      </span>
-                    )}
                   </div>
                   <p className="text-sm text-[#848E9C] mb-2">
                     {selectedStrategy.description || '无描述'}

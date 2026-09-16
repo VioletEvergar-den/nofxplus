@@ -98,6 +98,22 @@ func (c *SearxngClient) Search(query, lang string, maxResults int) ([]SearxngRes
 	return results, nil
 }
 
+// parseCouncilDate 解析 SearXNG 的 publishedDate（兼容 RFC3339 与 YYYY-MM-DD 前缀两种格式）
+func parseCouncilDate(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, true
+	}
+	if len(s) >= 10 {
+		if t, err := time.Parse("2006-01-02", s[:10]); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // BuildBrief 将搜索结果组装为注入 prompt 的「市场情报简报」文本
 func BuildBrief(results []SearxngResult) string {
 	if len(results) == 0 {
