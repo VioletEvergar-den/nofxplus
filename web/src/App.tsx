@@ -1,8 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import useSWR, { mutate } from 'swr'
 import { api } from './lib/api'
-import { MarketChartCard } from './components/MarketChartCard'
-import { EquityChart } from './components/EquityChart'
+import { ChartTabs } from './components/ChartTabs'
 import { AITradersPage } from './components/AITradersPage'
 import { LoginPage } from './components/LoginPage'
 import { RegisterPage } from './components/RegisterPage'
@@ -820,15 +819,6 @@ function TraderDetailsPage({
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false)
   const [showAnalysisHelp, setShowAnalysisHelp] = useState<boolean>(false)
 
-  // 策略静态币种：用于行情图表默认联动（static/mixed 模式取第一个自定义币种）
-  const strategyCoins = selectedTrader?.strategy_coin_source?.static_coins || []
-  const strategyDefaultSymbol =
-    (selectedTrader?.strategy_coin_source?.source_type === 'static' ||
-      selectedTrader?.strategy_coin_source?.source_type === 'mixed') &&
-    strategyCoins.length > 0
-      ? strategyCoins[0]
-      : undefined
-
   // Current positions pagination
   const [positionsPageSize, setPositionsPageSize] = useState<number>(20)
   const [positionsCurrentPage, setPositionsCurrentPage] = useState<number>(1)
@@ -1427,15 +1417,17 @@ function TraderDetailsPage({
         </div>
       )}
 
-      {/* 主要内容区：第一行 = 账户曲线(3/5) + 最近决策(2/5)，第二行 = 行情图表(2/5) + 当前持仓(3/5) */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
-        {/* 行情图表（第二行左，2/5 宽） */}
+      {/* 主要内容区：左右分屏（左栏 = 净值曲线/行情图表二合一款 + 当前持仓，右栏 = 最近决策） */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* 左侧：图表 + 持仓 */}
+        <div className="space-y-6">
+        {/* Chart Tabs (净值曲线 / K线 二合一) */}
         <div
           ref={chartSectionRef}
-          className="lg:col-start-1 lg:col-span-2 lg:row-start-2 chart-container animate-slide-in scroll-mt-32"
-          style={{ animationDelay: '0.15s' }}
+          className="chart-container animate-slide-in scroll-mt-32"
+          style={{ animationDelay: '0.1s' }}
         >
-          <MarketChartCard
+          <ChartTabs
             traderId={selectedTrader.trader_id}
             selectedSymbol={selectedChartSymbol}
             updateKey={chartUpdateKey}
@@ -1443,14 +1435,13 @@ function TraderDetailsPage({
               selectedTrader.exchange_id,
               exchanges
             )}
-            defaultSymbol={strategyDefaultSymbol}
           />
         </div>
 
-        {/* 当前持仓（第二行右，3/5 宽） */}
+        {/* 当前持仓（左栏下方） */}
         <div
-          className="lg:col-start-3 lg:col-span-3 lg:row-start-2 binance-card p-6 animate-slide-in"
-          style={{ animationDelay: '0.18s' }}
+          className="binance-card p-6 animate-slide-in"
+          style={{ animationDelay: '0.15s' }}
         >
             <div className="flex items-center justify-between mb-5">
               <h2
@@ -1784,18 +1775,12 @@ function TraderDetailsPage({
             )}
           </div>
           {/* 持仓卡片结束 */}
-
-        {/* 账户曲线（第一行左，3/5 宽） */}
-        <div
-          className="lg:col-start-1 lg:col-span-3 lg:row-start-1 animate-slide-in"
-          style={{ animationDelay: '0.1s' }}
-        >
-          <EquityChart traderId={selectedTrader.trader_id} />
         </div>
+        {/* 左侧栏结束 */}
 
-        {/* 最近决策（第一行右，2/5 宽） */}
+        {/* 右侧：最近决策 */}
         <div
-          className="lg:col-start-4 lg:col-span-2 lg:row-start-1 binance-card p-6 animate-slide-in"
+          className="binance-card p-6 animate-slide-in"
           style={{ animationDelay: '0.12s' }}
         >
           {/* 标题 */}
@@ -1859,7 +1844,7 @@ function TraderDetailsPage({
             </select>
           </div>
 
-          {/* 决策列表 - 可滚动（高度与账户曲线卡对齐，避免第一行留空） */}
+          {/* 决策列表 - 可滚动 */}
           <div
             className="space-y-4 overflow-y-auto pr-2"
             style={{ maxHeight: 'max(320px, calc(100vh - 470px))' }}
