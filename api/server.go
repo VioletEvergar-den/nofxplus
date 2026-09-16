@@ -163,6 +163,7 @@ func (s *Server) setupRoutes() {
 			// AI model configuration
 			protected.GET("/models", s.handleGetModelConfigs)
 			protected.PUT("/models", s.handleUpdateModelConfigs)
+			protected.POST("/models/:id/probe-capabilities", s.handleProbeModelCapabilities)
 
 			// Feature flags (admin control)
 			protected.GET("/features/adaptive", s.handleGetAdaptiveFeature)
@@ -493,6 +494,7 @@ type SafeModelConfig struct {
 	Enabled         bool   `json:"enabled"`
 	CustomAPIURL    string `json:"customApiUrl"`    // Custom API URL (usually not sensitive)
 	CustomModelName string `json:"customModelName"` // Custom model name (not sensitive)
+	Capabilities    string `json:"capabilities,omitempty"` // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool}
 }
 
 type ExchangeConfig struct {
@@ -1802,10 +1804,110 @@ func (s *Server) handleGetModelConfigs(c *gin.Context) {
 			Enabled:         model.Enabled,
 			CustomAPIURL:    model.CustomAPIURL,
 			CustomModelName: model.CustomModelName,
+			Capabilities:    model.Capabilities,
 		}
 	}
 
 	c.JSON(http.StatusOK, safeModels)
+}
+
+// newAIClientForModel 按模型配置构建 AI 客户端（与 runRealAITest 同逻辑）
+func newAIClientForModel(model *store.AIModel) mcp.AIClient {
+	var aiClient mcp.AIClient
+	switch model.Provider {
+	case "qwen":
+		aiClient = mcp.NewQwenClient()
+	case "deepseek":
+		aiClient = mcp.NewDeepSeekClient()
+	case "claude":
+		aiClient = mcp.NewClaudeClient()
+	case "kimi":
+		aiClient = mcp.NewKimiClient()
+	case "gemini":
+		aiClient = mcp.NewGeminiClient()
+	case "grok":
+		aiClient = mcp.NewGrokClient()
+	case "openai":
+		aiClient = mcp.NewOpenAIClient()
+	default:
+		aiClient = mcp.NewClient()
+	}
+	aiClient.SetAPIKey(model.APIKey, model.CustomAPIURL, model.CustomModelName)
+	return aiClient
+}
+
+// handleProbeModelCapabilities 检测模型能力（结构化输出/工具调用/深度思考），结果存为标签
+func (s *Server) handleProbeModelCapabilities(c *gin.Context) {
+	userID := c.GetString("user_id")
+	modelID := c.Param("id")
+	model, err := s.store.AIModel().Get(userID, modelID)
+	if err != nil || model == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "模型不存在"})
+		return
+	}
+	if !model.Enabled || model.APIKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "模型未启用或缺少 API Key"})
+		return
+	}
+
+	client := newAIClientForModel(model)
+	caps := map[string]bool{"json_mode": false, "tool_call": false, "reasoning": false}
+
+	// 1) 结构化输出：要求纯 JSON，看能否解析出对象
+	if resp, err := client.CallWithMessages(
+		"你只能输出 JSON 对象本身，禁止输出任何解释文字、markdown 代码块标记或其他内容。",
+		`请输出这个 JSON：{"ok": true, "n": 1}`,
+	); err == nil {
+		if block, ok := extractBalancedJSON(strings.TrimSpace(resp)); ok {
+			var m map[string]any
+			if json.Unmarshal([]byte(block), &m) == nil {
+				caps["json_mode"] = true
+			}
+		}
+	}
+
+	// 2) 工具调用：带一个 get_price 工具定义，看模型是否发起调用
+	probeReq := &mcp.Request{
+		Messages: []mcp.Message{
+			mcp.NewSystemMessage("你是行情助手。查询价格必须调用 get_current_price 工具，禁止直接回答价格。"),
+			mcp.NewUserMessage("BTC 现在多少钱？"),
+		},
+		Tools: []mcp.Tool{{
+			Type: "function",
+			Function: mcp.FunctionDef{
+				Name:        "get_current_price",
+				Description: "获取指定币种的当前价格",
+				Parameters: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"symbol": map[string]any{"type": "string", "description": "币种，如 BTCUSDT"}},
+					"required":   []string{"symbol"},
+				},
+			},
+		}},
+		ToolChoice: "auto",
+	}
+	if resp, err := client.CallWithRequest(probeReq); err == nil {
+		// mcp 层会把原生 tool_calls 桥接为文本协议代码块
+		if strings.Contains(resp, "```tool") || strings.Contains(resp, `"tool"`) {
+			caps["tool_call"] = true
+		}
+	}
+
+	// 3) 深度思考：模型名/自定义模型名启发式识别推理系列模型
+	nameLower := strings.ToLower(model.CustomModelName + " " + model.Name + " " + model.Provider)
+	for _, kw := range []string{"r1", "o1", "o3", "o4-mini", "thinking", "qwq", "glm-z", "reasoner", "reasoning"} {
+		if strings.Contains(nameLower, kw) {
+			caps["reasoning"] = true
+			break
+		}
+	}
+
+	capsJSON, _ := json.Marshal(caps)
+	if err := s.store.AIModel().UpdateCapabilities(model.ID, string(capsJSON)); err != nil {
+		logger.Warnf("⚠️ 保存模型能力标签失败: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"capabilities": string(capsJSON)})
 }
 
 // handleUpdateModelConfigs Update AI model configurations (supports both encrypted and plain text based on config)

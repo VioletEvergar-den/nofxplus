@@ -3,13 +3,17 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"nofx/logger"
 	"nofx/market"
+	"nofx/mcp"
 	"nofx/store"
 )
 
@@ -33,6 +37,10 @@ const councilToolProtocol = `
 {"tool": "search_news", "query": "ETH ETF 最新消息"}
 ` + "```" + `
 - search_news：联网搜索最新资讯（带发布日期，已过滤30天前旧闻）
+` + "```tool" + `
+{"tool": "list_coins"}
+` + "```" + `
+- list_coins：查询主流币种列表 + 24h成交额Top15 + 涨幅Top15热门币（选币依据，交易对完全由你们决定）
 - 连续工具调用最多 4 次；结论必须有数据支撑，请主动查证。`
 
 const councilAskProtocol = `
@@ -41,7 +49,7 @@ const councilAskProtocol = `
 ` + "```ask" + `
 {"target": "chief_trader", "question": "你的止损逻辑在单边极端行情下如何自处？"}
 ` + "```" + `
-合法 target: intel_analyst / chief_trader / strategy_architect。系统会把问题转给对方在圆桌作答后回到你。`
+合法 target: intel_analyst / chief_trader / strategy_architect / risk_reviewer（不能是自己）。系统会把问题转给对方作答，回答会进入圆桌记录回到你。`
 
 // councilAgentSystemPrompt Agent 角色系统提示词
 func councilAgentSystemPrompt(role councilRoleDef, lang string, capital float64, promptStyle string) string {
@@ -355,9 +363,70 @@ func (s *Server) execCouncilTool(call map[string]any, lang string) string {
 			return "搜索无结果，请换关键词"
 		}
 		return BuildBrief(results)
+	case "list_coins":
+		return s.execListCoins()
 	default:
 		return "错误: 未知工具 " + name
 	}
+}
+
+// execListCoins 返回主流币种与近期热门币种（币安 USDT 永续 24hr ticker）
+func (s *Server) execListCoins() string {
+	httpClient := &http.Client{Timeout: 20 * time.Second}
+	resp, err := httpClient.Get("https://fapi.binance.com/fapi/v1/ticker/24hr")
+	if err != nil {
+		return "错误: 币种行情获取失败 " + err.Error()
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "错误: 读取行情响应失败"
+	}
+	type tick struct {
+		Symbol             string  `json:"symbol"`
+		LastPrice          float64 `json:"lastPrice,string"`
+		PriceChangePercent float64 `json:"priceChangePercent,string"`
+		QuoteVolume        float64 `json:"quoteVolume,string"`
+	}
+	var ticks []tick
+	if err := json.Unmarshal(body, &ticks); err != nil {
+		return "错误: 解析行情数据失败"
+	}
+	majors := map[string]bool{
+		"BTCUSDT": true, "ETHUSDT": true, "SOLUSDT": true, "BNBUSDT": true,
+		"XRPUSDT": true, "DOGEUSDT": true, "ADAUSDT": true, "AVAXUSDT": true,
+		"LINKUSDT": true, "SUIUSDT": true,
+	}
+	// 过滤 USDT 永续、剔除杠杆代币等
+	pool := make([]tick, 0, len(ticks))
+	for _, t := range ticks {
+		if strings.HasSuffix(t.Symbol, "USDT") && !strings.Contains(t.Symbol, "_") && t.QuoteVolume > 0 {
+			pool = append(pool, t)
+		}
+	}
+	byVol := append([]tick(nil), pool...)
+	sort.Slice(byVol, func(i, j int) bool { return byVol[i].QuoteVolume > byVol[j].QuoteVolume })
+	byChg := append([]tick(nil), pool...)
+	sort.Slice(byChg, func(i, j int) bool { return byChg[i].PriceChangePercent > byChg[j].PriceChangePercent })
+
+	var sb strings.Builder
+	sb.WriteString("== 主流币（现货价/24h涨跌/24h额）==")
+	for _, t := range ticks {
+		if majors[t.Symbol] {
+			fmt.Fprintf(&sb, "\n%s %s %+.2f%% %.0f万", t.Symbol, formatCouncilPrice(t.LastPrice), t.PriceChangePercent, t.QuoteVolume/1e4)
+		}
+	}
+	sb.WriteString("\n== 成交额Top15（活跃度参考）==")
+	for i := 0; i < len(byVol) && i < 15; i++ {
+		t := byVol[i]
+		fmt.Fprintf(&sb, "\n%s %s %+.2f%%", t.Symbol, formatCouncilPrice(t.LastPrice), t.PriceChangePercent)
+	}
+	sb.WriteString("\n== 24h涨幅Top15（近期热门）==")
+	for i := 0; i < len(byChg) && i < 15; i++ {
+		t := byChg[i]
+		fmt.Fprintf(&sb, "\n%s %s %+.2f%%", t.Symbol, formatCouncilPrice(t.LastPrice), t.PriceChangePercent)
+	}
+	return sb.String()
 }
 
 // parseToolCalls 提取响应中的工具调用块（兼容 tool/json/裸围栏；自动展开 args 包装）
@@ -388,6 +457,88 @@ func remainingBudget(st *councilState) int {
 	return st.Budget - int(atomic.LoadInt32(&st.UsedBudget))
 }
 
+// councilNativeToolsDefs 专家团三个数据工具的原生 function calling 定义
+func councilNativeToolsDefs() []mcp.Tool {
+	return []mcp.Tool{
+		{
+			Type: "function",
+			Function: mcp.FunctionDef{
+				Name:        "get_klines",
+				Description: "K线查询。返回区间统计+指标快照（EMA/MACD/RSI/ATR/BOLL）+最近K线明细",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"symbol":   map[string]any{"type": "string", "description": "币种交易对，带 USDT 后缀，如 ETHUSDT"},
+						"interval": map[string]any{"type": "string", "description": "K线周期：5m/15m/30m/1h/4h/1d/1w"},
+						"limit":    map[string]any{"type": "integer", "description": "K线数量，10~200"},
+					},
+					"required": []string{"symbol", "interval"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: mcp.FunctionDef{
+				Name:        "search_news",
+				Description: "联网搜索加密货币最新资讯（带发布日期，已过滤30天前旧闻）",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"query": map[string]any{"type": "string", "description": "搜索关键词，如「ETH ETF 最新消息」"},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: mcp.FunctionDef{
+				Name:        "list_coins",
+				Description: "查询主流币种列表 + 24h成交额Top15 + 涨幅Top15热门币（选币依据，交易对完全由团队决定）",
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		},
+	}
+}
+
+// councilNativeToolCalling 判断该模型是否已通过能力检测（支持原生工具调用）
+func (s *Server) councilNativeToolCalling(userID, modelID string) bool {
+	model, err := s.store.AIModel().Get(userID, modelID)
+	if err != nil || model == nil || model.Capabilities == "" {
+		return false
+	}
+	var caps map[string]bool
+	if json.Unmarshal([]byte(model.Capabilities), &caps) != nil {
+		return false
+	}
+	return caps["tool_call"] == true
+}
+
+// callCouncilAINative 原生 function calling 调用（请求携带 Tools 定义，
+// 模型返回的 tool_calls 由 mcp 层桥接为文本协议代码块，上层解析零改动）
+func (s *Server) callCouncilAINative(userID, modelID, systemPrompt, userPrompt string) (string, error) {
+	model, err := s.store.AIModel().Get(userID, modelID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get AI model: %w", err)
+	}
+	if !model.Enabled {
+		return "", fmt.Errorf("AI model %s is not enabled", model.Name)
+	}
+	if model.APIKey == "" {
+		return "", fmt.Errorf("AI model %s is missing API Key", model.Name)
+	}
+	client := newAIClientForModel(model)
+	req := &mcp.Request{
+		Messages: []mcp.Message{
+			mcp.NewSystemMessage(systemPrompt),
+			mcp.NewUserMessage(userPrompt),
+		},
+		Tools:      councilNativeToolsDefs(),
+		ToolChoice: "auto",
+	}
+	return client.CallWithRequest(req)
+}
+
 // runAgentTurn 执行一个角色的一轮 Agent 发言（含工具循环/追问循环），返回最终信封
 // instruction: 本次发言的任务指令
 func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruction string) (*councilEnvelope, error) {
@@ -404,6 +555,8 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 	}
 	toolUses := 0
 	askUsed := false
+	// 模型已通过能力检测（tool_call）时走原生 function calling，否则回退文本协议
+	nativeTools := s.councilNativeToolCalling(st.UserID, modelID)
 
 	for turn := 0; turn < 10; turn++ {
 		if st.cancelFlag.Load() {
@@ -431,7 +584,16 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 		}
 
 		atomic.AddInt32(&st.UsedBudget, 1)
-		resp, err := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(role, st.Language, st.Capital, st.PromptStyle), sb.String())
+		sysP := councilAgentSystemPrompt(role, st.Language, st.Capital, st.PromptStyle)
+		var resp string
+		var err error
+		if nativeTools {
+			// 原生 function calling：请求携带 Tools 定义，模型直接发起 tool_calls（mcp 层桥接回文本协议块）
+			resp, err = s.callCouncilAINative(st.UserID, modelID, sysP, sb.String())
+		} else {
+			// 回退：文本协议（AI 自主输出 ```tool 代码块）
+			resp, err = s.callCouncilAI(st.UserID, modelID, sysP, sb.String())
+		}
 		if err != nil {
 			st.mu.Lock()
 			step.Status = string(councilStepFailed)
@@ -460,8 +622,8 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 			continue
 		}
 
-		// 2) 点名追问（仅风控评审官）
-		if m := reAskBlock.FindStringSubmatch(resp); m != nil && roleID == "risk_reviewer" && !askUsed && remainingBudget(st) >= 2 {
+		// 2) 点名追问（所有角色均可，每轮最多 1 次，需预算足够）——专家之间互相提问回答
+		if m := reAskBlock.FindStringSubmatch(resp); m != nil && !askUsed && remainingBudget(st) >= 2 {
 			var ask struct {
 				Target   string `json:"target"`
 				Question string `json:"question"`
@@ -477,13 +639,14 @@ func (s *Server) runAgentTurn(st *councilState, modelID string, roleID, instruct
 				}
 				if tRole.ID != "" && tRole.ID != roleID {
 					askUsed = true
-					st.addTranscript(roleID, role.Emoji, roleDisplayName(roleID, st.Language), "question",
-						fmt.Sprintf("【⚖️ 风控评审官 → %s %s 追问】%s", tRole.Emoji, roleDisplayName(tRole.ID, st.Language), ask.Question), nil)
-					st.addActivity(roleID, "❓ 追问 "+roleDisplayName(tRole.ID, st.Language)+": "+truncateRunes(ask.Question, 60))
+					askerName := roleDisplayName(roleID, st.Language)
+					st.addTranscript(roleID, role.Emoji, askerName, "question",
+						fmt.Sprintf("【%s %s → %s %s 提问】%s", role.Emoji, askerName, tRole.Emoji, roleDisplayName(tRole.ID, st.Language), ask.Question), nil)
+					st.addActivity(roleID, "❓ 向 "+roleDisplayName(tRole.ID, st.Language)+" 提问: "+truncateRunes(ask.Question, 60))
 					// 被点名角色作答一轮（一次性，信封格式；作答允许 payload 为 {}，summary 为主）
 					if remainingBudget(st) > 0 {
 						atomic.AddInt32(&st.UsedBudget, 1)
-						ansPrompt := fmt.Sprintf("## 用户意图\n%s\n\n## 圆桌发言记录\n%s\n## 追问\n风控评审官向你提问：%s\n\n请直接作答：输出信封 JSON，summary 为你的圆桌回应内容，payload 填空对象 {} 即可。", st.Intent, buildTranscriptText(st), ask.Question)
+						ansPrompt := fmt.Sprintf("## 用户意图\n%s\n\n## 圆桌发言记录\n%s\n## 提问\n%s %s 向你提问：%s\n\n请直接作答：输出信封 JSON，summary 为你的圆桌回应内容，payload 填空对象 {} 即可。", st.Intent, buildTranscriptText(st), role.Emoji, askerName, ask.Question)
 						resp2, err2 := s.callCouncilAI(st.UserID, modelID, councilAgentSystemPrompt(tRole, st.Language, st.Capital, st.PromptStyle), ansPrompt)
 						if err2 == nil {
 							env2, errP := parseEnvelope(resp2)
@@ -593,6 +756,11 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	if st.Capital > 0 {
 		opening += fmt.Sprintf("\n用户本金: %.2f USDT（所有币种推荐必须通过可开仓校验：本金×杠杆 ≥ 该币最小名义价值，BTC≥100U，主流币≥20U）", st.Capital)
 	}
+	if s.councilNativeToolCalling(st.UserID, modelID) {
+		opening += "\n工具调用模式: 原生 function calling（模型能力检测通过）"
+	} else {
+		opening += "\n工具调用模式: 文本协议（模型未通过原生工具检测，自动回退）"
+	}
 	st.addTranscript("system", "🏛️", "System", "system", opening, nil)
 
 	// ---------- 第 1 轮：情报分析师 ----------
@@ -628,7 +796,7 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	}
 
 	// ---------- 第 2 轮：策略架构师 ----------
-	if _, err := s.runAgentTurn(st, modelID, "strategy_architect", "请先点名点评交易员的计划（哪些采纳哪些有保留），再给出完整参数配置（含 1w/1d/4h 逐周期趋势判断、K线与指标、币种来源）。币种来源必须全部通过可开仓校验，小本金时优先合约面值小的币种。"); err != nil {
+	if _, err := s.runAgentTurn(st, modelID, "strategy_architect", "请先点名点评交易员的计划（哪些采纳哪些有保留），再给出完整参数配置。交易对完全由你们决定：默认模板的 BTC/ETH 只是起点，可用 list_coins 查询主流与热门币后自由增删 static_coins（须通过可开仓校验）；并含 1w/1d/4h 逐周期趋势判断、K线与指标。"); err != nil {
 		if err.Error() == "cancelled" {
 			st.setStatus("cancelled", "")
 			return

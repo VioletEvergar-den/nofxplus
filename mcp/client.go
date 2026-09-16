@@ -248,7 +248,14 @@ func (client *Client) parseMCPResponse(body []byte) (string, error) {
 	var result struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					Type     string `json:"type"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
@@ -277,7 +284,37 @@ func (client *Client) parseMCPResponse(body []byte) (string, error) {
 		})
 	}
 
-	return result.Choices[0].Message.Content, nil
+	content := result.Choices[0].Message.Content
+	// 原生 function calling 桥接：把 tool_calls 序列化为文本协议代码块，
+	// 使上层文本协议解析器（如策略专家团）无需修改即可消费原生工具调用
+	if len(result.Choices[0].Message.ToolCalls) > 0 {
+		var sb strings.Builder
+		sb.WriteString(content)
+		for _, tc := range result.Choices[0].Message.ToolCalls {
+			if tc.Function.Name == "" {
+				continue
+			}
+			argsMap := map[string]any{}
+			if strings.TrimSpace(tc.Function.Arguments) != "" {
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &argsMap); err != nil {
+					// arguments 展开失败则原样作为 raw 传入
+					argsMap = map[string]any{"raw": tc.Function.Arguments}
+				}
+			}
+			call := map[string]any{"tool": tc.Function.Name}
+			for k, v := range argsMap {
+				call[k] = v
+			}
+			callJSON, err := json.Marshal(call)
+			if err != nil {
+				continue
+			}
+			sb.WriteString("\n\n```tool\n" + string(callJSON) + "\n```")
+		}
+		content = sb.String()
+	}
+
+	return content, nil
 }
 
 func (client *Client) buildUrl() string {

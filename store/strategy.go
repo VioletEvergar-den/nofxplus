@@ -1177,8 +1177,9 @@ func (c *StrategyConfig) AvailableIndicatorsString(sb *strings.Builder, lang str
 func GetDefaultStrategyConfig(lang string) StrategyConfig {
 	config := StrategyConfig{
 		CoinSource: CoinSourceConfig{
-			SourceType:            "coinpool",
-			UseCoinPool:           true,
+			SourceType:            "static",
+			StaticCoins:           []string{"BTCUSDT", "ETHUSDT"},
+			UseCoinPool:           false, // AI500 数据源已失效，默认关闭，改为静态交易对
 			CoinPoolLimit:         10,
 			CoinPoolAPIURL:        config.GetDefaultCoinPoolAPIURL(),
 			UseOITop:              false,

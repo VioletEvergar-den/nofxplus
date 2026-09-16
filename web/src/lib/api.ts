@@ -223,6 +223,16 @@ export const api = {
     if (!result.success) throw new Error('更新模型配置失败')
   },
 
+  // 检测模型能力（结构化输出/工具调用/深度思考），结果存为标签
+  async probeModelCapabilities(modelId: string): Promise<string> {
+    const result = await httpClient.post<{ capabilities: string }>(
+      `${API_BASE}/models/${modelId}/probe-capabilities`,
+      {}
+    )
+    if (!result.success || !result.data) throw new Error('能力检测失败')
+    return result.data.capabilities
+  },
+
   // 交易所配置接口
   async getExchangeConfigs(): Promise<Exchange[]> {
     const result = await httpClient.get<Exchange[]>(`${API_BASE}/exchanges`)

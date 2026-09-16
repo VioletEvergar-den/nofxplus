@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useSWR from 'swr'
 import { api } from '../lib/api'
@@ -1790,11 +1790,40 @@ function ModelConfigModal({
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [modelName, setModelName] = useState('')
+  // 能力检测（结构化输出/工具调用/深度思考）
+  const [probing, setProbing] = useState(false)
+  const [probedCaps, setProbedCaps] = useState<{ json_mode: boolean; tool_call: boolean; reasoning: boolean } | null>(null)
+  const [probeError, setProbeError] = useState('')
 
   // 获取当前编辑的模型信息 - 编辑时从已配置的模型中查找，新建时从所有支持的模型中查找
   const selectedModel = editingModelId
     ? configuredModels?.find((m) => m.id === selectedModelId)
     : allModels?.find((m) => m.id === selectedModelId)
+
+  // 已保存的能力标签（编辑模式下从模型配置读取），刚检测完则优先用检测结果
+  const savedCaps = useMemo(() => {
+    if (!selectedModel?.capabilities) return null
+    try {
+      return JSON.parse(selectedModel.capabilities) as { json_mode: boolean; tool_call: boolean; reasoning: boolean }
+    } catch {
+      return null
+    }
+  }, [selectedModel?.capabilities])
+  const caps = probedCaps || savedCaps
+
+  const handleProbe = async () => {
+    if (!editingModelId || probing) return
+    setProbing(true)
+    setProbeError('')
+    try {
+      const raw = await api.probeModelCapabilities(editingModelId)
+      setProbedCaps(JSON.parse(raw))
+    } catch (e) {
+      setProbeError(e instanceof Error ? e.message : '能力检测失败')
+    } finally {
+      setProbing(false)
+    }
+  }
 
   // 如果是编辑现有模型，初始化API Key、Base URL和Model Name
   useEffect(() => {
@@ -2017,6 +2046,46 @@ function ModelConfigModal({
                   </div>
                 </div>
 
+                {/* 能力检测（仅已保存的模型可检测） */}
+                {editingModelId && selectedModel && (
+                  <div
+                    className="p-4 rounded"
+                    style={{ background: '#0B0E11', border: '1px solid #2B3139' }}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-semibold" style={{ color: '#EAECEF' }}>
+                        {t('modelCapabilities', language)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleProbe}
+                        disabled={probing}
+                        className="px-3 py-1.5 rounded text-xs font-semibold transition-opacity disabled:opacity-50"
+                        style={{
+                          background: 'rgba(240, 185, 11, 0.15)',
+                          color: '#F0B90B',
+                          border: '1px solid rgba(240, 185, 11, 0.4)',
+                        }}
+                      >
+                        {probing ? t('probing', language) : t('probeCapabilities', language)}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <CapTag on={caps?.json_mode} label={t('capJsonMode', language)} onColor="#0ECB81" />
+                      <CapTag on={caps?.tool_call} label={t('capToolCall', language)} onColor="#F0B90B" />
+                      <CapTag on={caps?.reasoning} label={t('capReasoning', language)} onColor="#60a5fa" />
+                    </div>
+                    {probeError && (
+                      <div className="text-xs mt-2" style={{ color: '#F6465D' }}>
+                        ⚠️ {probeError}
+                      </div>
+                    )}
+                    <div className="text-xs mt-2" style={{ color: '#848E9C' }}>
+                      {t('probeCapabilitiesHint', language)}
+                    </div>
+                  </div>
+                )}
+
                 <div
                   className="p-4 rounded"
                   style={{
@@ -2067,5 +2136,22 @@ function ModelConfigModal({
         </form>
       </div>
     </div>
+  )
+}
+
+// CapTag 能力标签（支持=彩色 ✓，不支持=灰色 ✕）
+function CapTag({ on, label, onColor }: { on?: boolean; label: string; onColor: string }) {
+  return (
+    <span
+      className="px-2 py-0.5 rounded-full text-xs font-semibold"
+      style={
+        on
+          ? { background: `${onColor}22`, color: onColor, border: `1px solid ${onColor}55` }
+          : { background: '#2B3139', color: '#5E6673', border: '1px solid #2B3139' }
+      }
+    >
+      {on ? '✓ ' : '✕ '}
+      {label}
+    </span>
   )
 }

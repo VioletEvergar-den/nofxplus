@@ -123,6 +123,7 @@ export interface AIModel {
   apiKey?: string
   customApiUrl?: string
   customModelName?: string
+  capabilities?: string           // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool}
 }
 
 export interface Exchange {

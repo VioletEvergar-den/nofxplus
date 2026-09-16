@@ -26,6 +26,7 @@ type AIModel struct {
 	APIKey          string    `json:"apiKey"`
 	CustomAPIURL    string    `json:"customApiUrl"`
 	CustomModelName string    `json:"customModelName"`
+	Capabilities    string    `json:"capabilities,omitempty"` // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool}
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -64,6 +65,7 @@ func (s *AIModelStore) initTables() error {
 	// Backward compatibility: add potentially missing columns
 	_, _ = s.db.Exec(`ALTER TABLE ai_models ADD COLUMN custom_api_url TEXT DEFAULT ''`)
 	_, _ = s.db.Exec(`ALTER TABLE ai_models ADD COLUMN custom_model_name TEXT DEFAULT ''`)
+	_, _ = s.db.Exec(`ALTER TABLE ai_models ADD COLUMN capabilities TEXT DEFAULT ''`)
 
 	return nil
 }
@@ -93,6 +95,7 @@ func (s *AIModelStore) List(userID string) ([]*AIModel, error) {
 		SELECT id, user_id, name, provider, enabled, api_key,
 		       COALESCE(custom_api_url, '') as custom_api_url,
 		       COALESCE(custom_model_name, '') as custom_model_name,
+		       COALESCE(capabilities, '') as capabilities,
 		       created_at, updated_at
 		FROM ai_models WHERE user_id = ? ORDER BY id
 	`, userID)
@@ -110,6 +113,7 @@ func (s *AIModelStore) List(userID string) ([]*AIModel, error) {
 		err := rows.Scan(
 			&model.ID, &model.UserID, &model.Name, &model.Provider,
 			&model.Enabled, &model.APIKey, &model.CustomAPIURL, &model.CustomModelName,
+			&model.Capabilities,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -145,11 +149,12 @@ func (s *AIModelStore) Get(userID, modelID string) (*AIModel, error) {
 		var createdAt, updatedAt string
 		err := s.db.QueryRow(`
 			SELECT id, user_id, name, provider, enabled, api_key,
-			       COALESCE(custom_api_url, ''), COALESCE(custom_model_name, ''), created_at, updated_at
+			       COALESCE(custom_api_url, ''), COALESCE(custom_model_name, ''), COALESCE(capabilities, ''), created_at, updated_at
 			FROM ai_models WHERE user_id = ? AND id = ? LIMIT 1
 		`, uid, modelID).Scan(
 			&model.ID, &model.UserID, &model.Name, &model.Provider,
 			&model.Enabled, &model.APIKey, &model.CustomAPIURL, &model.CustomModelName,
+			&model.Capabilities,
 			&createdAt, &updatedAt,
 		)
 		if err == nil {
@@ -175,11 +180,12 @@ func (s *AIModelStore) GetByID(modelID string) (*AIModel, error) {
 	var createdAt, updatedAt string
 	err := s.db.QueryRow(`
 		SELECT id, user_id, name, provider, enabled, api_key,
-		       COALESCE(custom_api_url, ''), COALESCE(custom_model_name, ''), created_at, updated_at
+		       COALESCE(custom_api_url, ''), COALESCE(custom_model_name, ''), COALESCE(capabilities, ''), created_at, updated_at
 		FROM ai_models WHERE id = ? LIMIT 1
 	`, modelID).Scan(
 		&model.ID, &model.UserID, &model.Name, &model.Provider,
 		&model.Enabled, &model.APIKey, &model.CustomAPIURL, &model.CustomModelName,
+		&model.Capabilities,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -214,12 +220,13 @@ func (s *AIModelStore) firstEnabled(userID string) (*AIModel, error) {
 	var createdAt, updatedAt string
 	err := s.db.QueryRow(`
 		SELECT id, user_id, name, provider, enabled, api_key,
-		       COALESCE(custom_api_url, ''), COALESCE(custom_model_name, ''), created_at, updated_at
+		       COALESCE(custom_api_url, ''), COALESCE(custom_model_name, ''), COALESCE(capabilities, ''), created_at, updated_at
 		FROM ai_models WHERE user_id = ? AND enabled = 1
 		ORDER BY datetime(updated_at) DESC, id ASC LIMIT 1
 	`, userID).Scan(
 		&model.ID, &model.UserID, &model.Name, &model.Provider,
 		&model.Enabled, &model.APIKey, &model.CustomAPIURL, &model.CustomModelName,
+		&model.Capabilities,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -320,5 +327,13 @@ func (s *AIModelStore) Create(userID, id, name, provider string, enabled bool, a
 		INSERT OR IGNORE INTO ai_models (id, user_id, name, provider, enabled, api_key, custom_api_url)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, id, userID, name, provider, enabled, apiKey, customAPIURL)
+	return err
+}
+
+// UpdateCapabilities 保存模型能力检测结果（JSON 字符串）
+func (s *AIModelStore) UpdateCapabilities(modelID, capabilities string) error {
+	_, err := s.db.Exec(`
+		UPDATE ai_models SET capabilities = ?, updated_at = datetime('now') WHERE id = ?
+	`, capabilities, modelID)
 	return err
 }

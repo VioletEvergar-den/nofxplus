@@ -576,7 +576,7 @@ export function StrategyStudioPage() {
       {/* Main Content - Three Columns */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column - Strategy List */}
-        <div className="w-48 flex-shrink-0 border-r overflow-y-auto" style={{ borderColor: '#2B3139' }}>
+        <div className="w-60 flex-shrink-0 border-r overflow-y-auto" style={{ borderColor: '#2B3139' }}>
           <div className="p-2">
             {/* AI 专家团 CTA（显眼独立入口） */}
             <button
@@ -639,7 +639,7 @@ export function StrategyStudioPage() {
                   }}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm truncate" style={{ color: '#EAECEF' }}>{strategy.name}</span>
+                    <span className="text-sm break-all leading-snug flex-1 min-w-0" style={{ color: '#EAECEF' }} title={strategy.name}>{strategy.name}</span>
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleExportStrategy(strategy) }}
@@ -1058,7 +1058,7 @@ export function StrategyStudioPage() {
           setHasChanges(true)
           // 明确反馈：策略填入了中间编辑器，尚未保存
           notify.success(language === 'zh'
-            ? '会诊策略已填入中间编辑器（见高亮区域），请检查后点击「保存」'
+            ? '专家团策略已填入编辑器（见高亮区域），请检查后点击「保存」'
             : 'Council strategy loaded into the editor (highlighted). Review and click "Save"')
           setEditorHighlight(true)
           window.setTimeout(() => setEditorHighlight(false), 2600)

@@ -186,17 +186,17 @@ function TranscriptItem({ entry, lang }: { entry: TranscriptEntry; lang: Languag
     )
   }
 
-  // 追问：风控官红/amber 描边卡
+  // 提问：专家互问（amber/红 描边卡）
   if (entry.kind === 'question') {
     return (
       <div className="flex items-start gap-2">
         <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: 'rgba(246,70,85,0.1)', border: '1px solid rgba(246,70,85,0.4)' }}>
-          <Scale className="w-3 h-3 text-[#F6465D]" />
+          <MessageSquare className="w-3 h-3 text-[#F6465D]" />
         </div>
         <div className="rounded-lg px-2.5 py-1.5 flex-1 min-w-0" style={{ background: 'rgba(246,70,85,0.05)', border: '1px solid rgba(246,70,85,0.35)' }}>
           <div className="text-[10px] text-[#F6465D] font-medium flex items-center gap-1.5">
             <MessageSquare className="w-3 h-3" />
-            <span>⚖️ {lang === 'zh' ? '风控评审官 · 点名追问' : 'Risk Reviewer · Follow-up'}</span>
+            <span>{entry.emoji} {entry.name} · {lang === 'zh' ? '向其他专家提问' : 'Cross-question'}</span>
             <span className="text-[#F6465D]/50">{timeStr}</span>
           </div>
           <div className="text-[11px] text-[#EAECEF] mt-0.5 leading-relaxed whitespace-pre-wrap break-words">{entry.content}</div>
@@ -666,7 +666,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
                 )}
                 {council.status === 'cancelled' && (
                   <div className="rounded-lg p-3 bg-[#2B3139]/50 border border-[#2B3139] text-[11px] text-[#848E9C]">
-                    {language === 'zh' ? '会诊已取消。' : 'Council cancelled.'}
+                    {language === 'zh' ? '圆桌已取消。' : 'Council cancelled.'}
                   </div>
                 )}
               </div>
