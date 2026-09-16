@@ -59,7 +59,7 @@ export function FeedbackAnalysisDisplay({
             {analysis.failure_patterns.map((pattern, idx) => (
               <div
                 key={idx}
-                className="p-4 rounded-lg"
+                className="p-4 rounded-xl"
                 style={{ background: 'rgba(246,70,93,0.1)', border: '1px solid rgba(246,70,93,0.3)' }}
               >
                 <div className="flex items-start justify-between mb-2">
@@ -115,7 +115,7 @@ export function FeedbackAnalysisDisplay({
             {analysis.recommended_actions.map((action, idx) => (
               <div
                 key={idx}
-                className="p-3 rounded-lg flex items-start gap-3"
+                className="p-3 rounded-xl flex items-start gap-3"
                 style={{ background: 'rgba(240,185,11,0.1)', border: '1px solid rgba(240,185,11,0.2)' }}
               >
                 <div className="mt-0.5 font-bold" style={{ color: '#F0B90B' }}>{idx + 1}.</div>
@@ -135,7 +135,7 @@ export function FeedbackAnalysisDisplay({
           </h3>
           <div className="space-y-2">
             {analysis.top_losing_trades.slice(0, 10).map((trade, idx) => (
-              <div key={idx} className="p-3 rounded-lg" style={{ background: '#1E2329', border: '1px solid #2B3139' }}>
+              <div key={idx} className="p-3 rounded-xl" style={{ background: '#1E2329', border: '1px solid #2B3139' }}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span
@@ -202,7 +202,7 @@ export function FeedbackAnalysisDisplay({
             {analysis.key_insights.map((insight, idx) => (
               <div
                 key={idx}
-                className="p-3 rounded-lg flex items-start gap-3"
+                className="p-3 rounded-xl flex items-start gap-3"
                 style={{ background: 'rgba(14,203,129,0.1)', border: '1px solid rgba(14,203,129,0.2)' }}
               >
                 <div className="text-lg">💡</div>

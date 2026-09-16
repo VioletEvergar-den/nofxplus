@@ -35,6 +35,7 @@ import {
   Check,
   Settings,
   Sparkles,
+  X,
 } from 'lucide-react'
 import { confirmToast } from '../lib/notify'
 import { toast } from 'sonner'
@@ -1620,37 +1621,62 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
 
       {/* Prompt Lab Modal */}
       {promptLabTraderId && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center">
-          <div className="bg-slate-900 rounded-lg shadow-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 relative">
-            <button
-              className="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl"
-              onClick={() => setPromptLabTraderId(null)}
-              aria-label="Close"
-            >
-              x
-            </button>
-            <LiveTraderPromptLab traderId={promptLabTraderId} />
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-4xl xl:max-w-5xl h-[min(90vh,1100px)] bg-[#16181C] border border-[#2B3139] rounded-xl shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Fixed header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#2B3139] bg-[#0B0E11]/60 shrink-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-[#F0B90B]" />
+                <h2 className="text-lg font-bold text-[#EAECEF]">
+                  {language === 'zh' ? '交易员提示词实验室' : 'Trader Prompt Lab'}
+                </h2>
+              </div>
+              <button
+                className="p-1.5 rounded-lg text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139] transition-colors"
+                onClick={() => setPromptLabTraderId(null)}
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <LiveTraderPromptLab traderId={promptLabTraderId} showHeader={false} />
+            </div>
           </div>
         </div>
       )}
 
       {/* Analysis Modal */}
       {analysisTraderId && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center">
-          <div className="bg-slate-900 rounded-lg shadow-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 relative">
-            <button
-              className="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl"
-              onClick={() => setAnalysisTraderId(null)}
-              aria-label="Close"
-            >
-              x
-            </button>
-            <div className="mb-4">
-              <h2 className="text-xl font-bold" style={{ color: '#EAECEF' }}>
-                {language === 'zh' ? '交易分析' : 'Trading Analysis'}
-              </h2>
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            className="w-full max-w-4xl xl:max-w-5xl h-[min(90vh,1100px)] bg-[#16181C] border border-[#2B3139] rounded-xl shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Fixed header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#2B3139] bg-[#0B0E11]/60 shrink-0">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-[#F0B90B]" />
+                <h2 className="text-lg font-bold text-[#EAECEF]">
+                  {language === 'zh' ? '交易分析' : 'Trading Analysis'}
+                </h2>
+              </div>
+              <button
+                className="p-1.5 rounded-lg text-[#848E9C] hover:text-[#EAECEF] hover:bg-[#2B3139] transition-colors"
+                onClick={() => setAnalysisTraderId(null)}
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
-            <LiveTraderAnalysis traderId={analysisTraderId} />
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <LiveTraderAnalysis traderId={analysisTraderId} />
+            </div>
           </div>
         </div>
       )}

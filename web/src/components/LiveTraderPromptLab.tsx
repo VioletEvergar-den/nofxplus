@@ -7,8 +7,9 @@ export type { PromptVariantPerformanceResponse as TraderPromptVariantResponse } 
 
 interface LiveTraderPromptLabProps {
   traderId?: string
+  showHeader?: boolean
 }
 
-export function LiveTraderPromptLab({ traderId }: LiveTraderPromptLabProps) {
-  return <PromptVariantLab type="trader" resourceId={traderId} />
+export function LiveTraderPromptLab({ traderId, showHeader }: LiveTraderPromptLabProps) {
+  return <PromptVariantLab type="trader" resourceId={traderId} showHeader={showHeader} />
 }

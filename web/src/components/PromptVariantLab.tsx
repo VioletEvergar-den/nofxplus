@@ -84,9 +84,11 @@ interface PromptVariantLabProps {
   type: 'backtest' | 'trader'
   resourceId?: string
   onBack?: () => void
+  /** 是否渲染内部大标题（嵌入弹窗且外壳已有标题时传 false） */
+  showHeader?: boolean
 }
 
-export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
+export function PromptVariantLab({ type, resourceId, showHeader = true }: PromptVariantLabProps) {
   const { language } = useLanguage()
   const [selectedVariant, setSelectedVariant] = useState<PromptVariant | null>(null)
   const [activating, setActivating] = useState<string | null>(null)
@@ -212,23 +214,23 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
       'text-purple-400',
       'text-pink-400',
       'text-orange-400',
-      'text-green-400',
+      'text-[#0ECB81]',
     ]
     return colors[generation % colors.length]
   }
 
   const getFitnessColor = (score: number) => {
-    if (score >= 0.8) return 'text-green-400'
-    if (score >= 0.5) return 'text-yellow-400'
-    return 'text-red-400'
+    if (score >= 0.8) return 'text-[#0ECB81]'
+    if (score >= 0.5) return 'text-[#F0B90B]'
+    return 'text-[#F6465D]'
   }
 
   if (!resourceId) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <Info className="h-12 w-12 mx-auto mb-4 text-slate-500" />
-          <p className="text-slate-400">
+          <Info className="h-12 w-12 mx-auto mb-4 text-[#5E6673]" />
+          <p className="text-[#848E9C]">
             {isBacktest
               ? language === 'zh'
                 ? '请选择一个回测查看提示词优化'
@@ -247,13 +249,13 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-400" />
-          <p className="text-red-400">
+          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-[#F6465D]" />
+          <p className="text-[#F6465D]">
             {language === 'zh'
               ? '加载提示词优化数据失败'
               : 'Failed to load prompt optimization data'}
           </p>
-          <p className="text-slate-500 text-sm mt-2">{String(error)}</p>
+          <p className="text-[#5E6673] text-sm mt-2">{String(error)}</p>
         </div>
       </div>
     )
@@ -263,8 +265,8 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 mx-auto mb-4 text-blue-400 animate-spin" />
-          <p className="text-slate-400">
+          <Loader2 className="h-12 w-12 mx-auto mb-4 text-[#F0B90B] animate-spin" />
+          <p className="text-[#848E9C]">
             {language === 'zh' ? '加载中...' : 'Loading...'}
           </p>
         </div>
@@ -276,8 +278,8 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <Activity className="h-12 w-12 mx-auto mb-3 text-slate-600" />
-          <p className="text-slate-400">
+          <Activity className="h-12 w-12 mx-auto mb-3 text-[#4A5158]" />
+          <p className="text-[#848E9C]">
             {language === 'zh'
               ? '提示词优化未启用或暂无变体'
               : 'Prompt optimization not enabled or no variants yet'}
@@ -290,51 +292,53 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Sparkles className="h-6 w-6 text-yellow-400" />
-          <h2 className="text-2xl font-bold text-white">
-            {isBacktest
-              ? language === 'zh'
-                ? '提示词实验室'
-                : 'Prompt Lab'
-              : language === 'zh'
-              ? '交易员提示词实验室'
-              : 'Trader Prompt Lab'}
-          </h2>
+      {showHeader && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-6 w-6 text-[#F0B90B]" />
+            <h2 className="text-2xl font-bold text-[#EAECEF]">
+              {isBacktest
+                ? language === 'zh'
+                  ? '提示词实验室'
+                  : 'Prompt Lab'
+                : language === 'zh'
+                ? '交易员提示词实验室'
+                : 'Trader Prompt Lab'}
+            </h2>
+          </div>
+          <div className="text-sm text-[#848E9C]">
+            {language === 'zh' ? '代 #' : 'Gen #'}
+            <span className={`ml-2 font-bold ${getGenerationColor(data?.generation ?? 0)}`}>
+              {data?.generation ?? 0}
+            </span>
+          </div>
         </div>
-        <div className="text-sm text-slate-400">
-          {language === 'zh' ? '代 #' : 'Gen #'}
-          <span className={`ml-2 font-bold ${getGenerationColor(data?.generation ?? 0)}`}>
-            {data?.generation ?? 0}
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Stats Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-          <div className="text-slate-400 text-xs mb-1">
+        <div className="bg-[#1E2329] rounded-xl p-4 border border-[#2B3139]">
+          <div className="text-[#848E9C] text-xs mb-1">
             {language === 'zh' ? '总变体数' : 'Total Variants'}
           </div>
-          <div className="text-2xl font-bold text-white">{showVariants.length}</div>
+          <div className="text-2xl font-bold text-[#EAECEF]">{showVariants.length}</div>
         </div>
-        <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-          <div className="text-slate-400 text-xs mb-1">
+        <div className="bg-[#1E2329] rounded-xl p-4 border border-[#2B3139]">
+          <div className="text-[#848E9C] text-xs mb-1">
             {language === 'zh' ? '总代数' : 'Generations'}
           </div>
-          <div className="text-2xl font-bold text-blue-400">{data?.generation ?? 0}</div>
+          <div className="text-2xl font-bold text-[#F0B90B]">{data?.generation ?? 0}</div>
         </div>
-        <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-          <div className="text-slate-400 text-xs mb-1">
+        <div className="bg-[#1E2329] rounded-xl p-4 border border-[#2B3139]">
+          <div className="text-[#848E9C] text-xs mb-1">
             {language === 'zh' ? '活跃变体' : 'Active Variant'}
           </div>
-          <div className="text-2xl font-bold text-green-400">
+          <div className="text-2xl font-bold text-[#0ECB81]">
             {activeVariant ? `Gen ${activeVariant.generation}` : '-'}
           </div>
         </div>
-        <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-          <div className="text-slate-400 text-xs mb-1">
+        <div className="bg-[#1E2329] rounded-xl p-4 border border-[#2B3139]">
+          <div className="text-[#848E9C] text-xs mb-1">
             {language === 'zh' ? '活跃适应度' : 'Active Fitness'}
           </div>
           <div className={`text-2xl font-bold ${getFitnessColor(activeVariant?.fitnessScore ?? 0)}`}>
@@ -345,14 +349,14 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
 
       {/* Variants Grid */}
       <div>
-        <h3 className="text-lg font-semibold text-white mb-4">
+        <h3 className="text-lg font-semibold text-[#EAECEF] mb-4">
           {language === 'zh' ? '提示词变体' : 'Prompt Variants'}
         </h3>
 
         {showVariants.length === 0 ? (
-          <div className="bg-slate-800/30 rounded-lg border border-dashed border-slate-700 p-8 text-center">
-            <Activity className="h-12 w-12 mx-auto mb-3 text-slate-600" />
-            <p className="text-slate-400">
+          <div className="bg-[#1E2329]/60 rounded-xl border border-dashed border-[#2B3139] p-8 text-center">
+            <Activity className="h-12 w-12 mx-auto mb-3 text-[#4A5158]" />
+            <p className="text-[#848E9C]">
               {language === 'zh'
                 ? '等待提示词优化生成第一个变体...'
                 : 'Waiting for prompt optimization to generate the first variant...'}
@@ -367,34 +371,34 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
                 onClick={() => setSelectedVariant(variant)}
-                className={`cursor-pointer rounded-lg border transition-all ${
+                className={`cursor-pointer rounded-xl border transition-all ${
                   variant.isActive
-                    ? 'border-green-500/50 bg-green-950/20 ring-2 ring-green-500/30'
+                    ? 'border-[#0ECB81]/50 bg-[#0ECB81]/10 ring-2 ring-[#0ECB81]/30'
                     : selectedVariant?.id === variant.id
-                    ? 'border-blue-500/50 bg-blue-950/20'
-                    : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                    ? 'border-[#F0B90B]/60 bg-[#F0B90B]/10'
+                    : 'border-[#2B3139] bg-[#1E2329]/60 hover:border-[#3A4149]'
                 } p-4`}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2">
                     {variant.isActive ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-400" />
+                      <CheckCircle2 className="h-5 w-5 text-[#0ECB81]" />
                     ) : (
-                      <Circle className="h-5 w-5 text-slate-500" />
+                      <Circle className="h-5 w-5 text-[#5E6673]" />
                     )}
                     <div>
                       <div className={`font-semibold text-sm ${getGenerationColor(variant.generation)}`}>
                         Gen {variant.generation}
                       </div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-[#848E9C]">
                         {variant.createdAt ? new Date(variant.createdAt).toLocaleTimeString() : '-'}
                       </div>
                     </div>
                   </div>
 
                   {variant.isActive && (
-                    <div className="flex items-center gap-1 px-2 py-1 bg-green-500/20 rounded text-xs text-green-400">
+                    <div className="flex items-center gap-1 px-2 py-1 bg-[#0ECB81]/20 rounded-lg text-xs text-[#0ECB81]">
                       <Activity className="h-3 w-3" />
                       {language === 'zh' ? '活跃' : 'Active'}
                     </div>
@@ -402,38 +406,38 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                 </div>
 
                 {/* Performance Metrics */}
-                <div className="space-y-2 mb-4 pb-4 border-b border-slate-700">
+                <div className="space-y-2 mb-4 pb-4 border-b border-[#2B3139]">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-400">
+                    <span className="text-[#848E9C]">
                       {language === 'zh' ? '总决策' : 'Decisions'}
                     </span>
-                    <span className="text-white font-medium">{variant.totalDecisions}</span>
+                    <span className="text-[#EAECEF] font-medium">{variant.totalDecisions}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-400">
+                    <span className="text-[#848E9C]">
                       {language === 'zh' ? '总收益率' : 'Return'}
                     </span>
-                    <span className={variant.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}>
+                    <span className={variant.totalReturn >= 0 ? 'text-[#0ECB81]' : 'text-[#F6465D]'}>
                       {variant.totalReturn.toFixed(2)}%
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-400">
+                    <span className="text-[#848E9C]">
                       {language === 'zh' ? '胜率' : 'Win Rate'}
                     </span>
-                    <span className="text-white">{variant.winRate.toFixed(1)}%</span>
+                    <span className="text-[#EAECEF]">{variant.winRate.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-400">
+                    <span className="text-[#848E9C]">
                       {language === 'zh' ? '利润因子' : 'Profit Factor'}
                     </span>
-                    <span className="text-white">{variant.profitFactor.toFixed(2)}</span>
+                    <span className="text-[#EAECEF]">{variant.profitFactor.toFixed(2)}</span>
                   </div>
                 </div>
 
                 {/* Fitness Score */}
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm text-slate-400">
+                  <span className="text-sm text-[#848E9C]">
                     {language === 'zh' ? '适应度分数' : 'Fitness Score'}
                   </span>
                   <div className={`text-lg font-bold ${getFitnessColor(variant.fitnessScore)}`}>
@@ -446,7 +450,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                   <button
                     onClick={() => handleActivate(variant.id)}
                     disabled={activating !== null}
-                    className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white text-sm font-medium rounded transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-2 px-3 bg-[#F0B90B] hover:bg-[#D4A70A] disabled:bg-[#2B3139] disabled:text-[#5E6673] text-[#111418] text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                   >
                     {activating === variant.id ? (
                       <>
@@ -469,14 +473,14 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
 
       {/* Selected Variant Details */}
       {selectedVariant && (
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700 p-6">
+        <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] p-6">
           <div className="flex items-center gap-2 mb-4">
-            <GitBranch className="h-5 w-5 text-blue-400" />
-            <h3 className="text-lg font-semibold text-white">
+            <GitBranch className="h-5 w-5 text-[#F0B90B]" />
+            <h3 className="text-lg font-semibold text-[#EAECEF]">
               {language === 'zh' ? '选中变体详情' : 'Selected Variant Details'}
             </h3>
             {selectedVariant.isActive && (
-              <span className="ml-auto text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded">
+              <span className="ml-auto text-xs px-2 py-1 bg-[#0ECB81]/20 text-[#0ECB81] rounded-lg">
                 {language === 'zh' ? '活跃' : 'Active'}
               </span>
             )}
@@ -484,7 +488,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
             <div>
-              <div className="text-xs text-slate-400 mb-1">
+              <div className="text-xs text-[#848E9C] mb-1">
                 {language === 'zh' ? '代数' : 'Generation'}
               </div>
               <div className={`text-xl font-bold ${getGenerationColor(selectedVariant.generation)}`}>
@@ -492,15 +496,15 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-400 mb-1">
+              <div className="text-xs text-[#848E9C] mb-1">
                 {language === 'zh' ? '创建时间' : 'Created'}
               </div>
-              <div className="text-sm text-white">
+              <div className="text-sm text-[#EAECEF]">
                 {selectedVariant.createdAt ? new Date(selectedVariant.createdAt).toLocaleString() : '-'}
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-400 mb-1">
+              <div className="text-xs text-[#848E9C] mb-1">
                 {language === 'zh' ? '适应度分数' : 'Fitness'}
               </div>
               <div className={`text-xl font-bold ${getFitnessColor(selectedVariant.fitnessScore)}`}>
@@ -511,15 +515,15 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
 
           {/* Prompt Text */}
           <div>
-            <div className="text-sm text-slate-400 mb-2">
+            <div className="text-sm text-[#848E9C] mb-2">
               {language === 'zh' ? '系统提示词' : 'System Prompt'}
             </div>
-            <div className="bg-slate-900/50 rounded p-3 border border-slate-700 max-h-48 overflow-y-auto space-y-4">
+            <div className="bg-[#0B0E11] rounded-lg p-3 border border-[#2B3139] max-h-48 overflow-y-auto space-y-4">
               <div>
                 <div className="font-bold text-blue-400 mb-1">
                   {language === 'zh' ? '角色定义' : 'Role Definition'}
                 </div>
-                <p className="text-sm text-slate-300 whitespace-pre-wrap font-mono">
+                <p className="text-sm text-[#B7BDC6] whitespace-pre-wrap font-mono">
                   {selectedVariant.promptRoleDefinition || (language === 'zh' ? '无' : 'N/A')}
                 </p>
               </div>
@@ -527,7 +531,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                 <div className="font-bold text-purple-400 mb-1">
                   {language === 'zh' ? '交易频率' : 'Trading Frequency'}
                 </div>
-                <p className="text-sm text-slate-300 whitespace-pre-wrap font-mono">
+                <p className="text-sm text-[#B7BDC6] whitespace-pre-wrap font-mono">
                   {selectedVariant.promptTradingFrequency || (language === 'zh' ? '无' : 'N/A')}
                 </p>
               </div>
@@ -535,7 +539,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                 <div className="font-bold text-pink-400 mb-1">
                   {language === 'zh' ? '入场标准' : 'Entry Standards'}
                 </div>
-                <p className="text-sm text-slate-300 whitespace-pre-wrap font-mono">
+                <p className="text-sm text-[#B7BDC6] whitespace-pre-wrap font-mono">
                   {selectedVariant.promptEntryStandards || (language === 'zh' ? '无' : 'N/A')}
                 </p>
               </div>
@@ -543,7 +547,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                 <div className="font-bold text-orange-400 mb-1">
                   {language === 'zh' ? '决策流程' : 'Decision Process'}
                 </div>
-                <p className="text-sm text-slate-300 whitespace-pre-wrap font-mono">
+                <p className="text-sm text-[#B7BDC6] whitespace-pre-wrap font-mono">
                   {selectedVariant.promptDecisionProcess || (language === 'zh' ? '无' : 'N/A')}
                 </p>
               </div>
@@ -555,52 +559,52 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
       {/* Prompt Variant Performance (Trader only) */}
       {isTrader && (
         <div>
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-orange-400" />
+          <h3 className="text-lg font-semibold text-[#EAECEF] mb-4 flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-[#F0B90B]" />
             {language === 'zh' ? '提示词变体表现' : 'Prompt Variant Performance'}
           </h3>
           {performanceError && (
-            <div className="text-red-400 text-sm mb-2">
+            <div className="text-[#F6465D] text-sm mb-2">
               {language === 'zh' ? '加载表现数据失败' : 'Failed to load performance data'}
             </div>
           )}
           {!performanceData ? (
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex items-center gap-2 text-[#848E9C]">
               <Loader2 className="h-4 w-4 animate-spin" />
               {language === 'zh' ? '加载中...' : 'Loading...'}
             </div>
           ) : (
-            <div className="bg-slate-800/50 rounded-lg border border-slate-700 p-4 mb-6">
+            <div className="bg-[#1E2329] rounded-xl border border-[#2B3139] p-4 mb-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
-                  <div className="text-xs text-slate-400 mb-1">
+                  <div className="text-xs text-[#848E9C] mb-1">
                     {language === 'zh' ? '总收益率' : 'Total Return'}
                   </div>
-                  <div className="text-xl font-bold text-green-400">
+                  <div className="text-xl font-bold text-[#0ECB81]">
                     {(performanceVariant?.totalReturn ?? 0).toFixed(2)}%
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-400 mb-1">
+                  <div className="text-xs text-[#848E9C] mb-1">
                     {language === 'zh' ? '胜率' : 'Win Rate'}
                   </div>
-                  <div className="text-xl font-bold text-blue-400">
+                  <div className="text-xl font-bold text-[#F0B90B]">
                     {(performanceVariant?.winRate ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-400 mb-1">
+                  <div className="text-xs text-[#848E9C] mb-1">
                     {language === 'zh' ? '最大回撤' : 'Max Drawdown'}
                   </div>
-                  <div className="text-xl font-bold text-red-400">
+                  <div className="text-xl font-bold text-[#F6465D]">
                     {(performanceVariant?.maxDrawdown ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-400 mb-1">
+                  <div className="text-xs text-[#848E9C] mb-1">
                     {language === 'zh' ? '夏普比率' : 'Sharpe Ratio'}
                   </div>
-                  <div className="text-xl font-bold text-yellow-400">
+                  <div className="text-xl font-bold text-[#F0B90B]">
                     {(performanceVariant?.sharpeRatio ?? 0).toFixed(2)}
                   </div>
                 </div>
@@ -611,7 +615,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
       )}
 
       {/* Last Updated */}
-      <div className="text-xs text-slate-500 text-center">
+      <div className="text-xs text-[#5E6673] text-center">
         {language === 'zh' ? '最后更新' : 'Last updated'}:{' '}
         {data?.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '-'}
       </div>
