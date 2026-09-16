@@ -2027,9 +2027,14 @@ func (at *AutoTrader) SetShowInCompetition(show bool) {
 	at.showInCompetition = show
 }
 
-// SetCustomPrompt sets custom trading strategy prompt
+// SetCustomPrompt sets custom trading strategy prompt.
+// It wires the prompt into the strategy engine so that it is actually
+// appended to the system prompt sent to the AI (supplement mode).
 func (at *AutoTrader) SetCustomPrompt(prompt string) {
 	at.customPrompt = prompt
+	if at.strategyEngine != nil {
+		at.strategyEngine.SetCustomPrompt(prompt)
+	}
 }
 
 // SetOverrideBasePrompt sets whether to override base prompt

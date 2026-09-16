@@ -163,6 +163,7 @@ function App() {
   }
   const [lastUpdate, setLastUpdate] = useState<string>('--:--:--')
   const [decisionsLimit, setDecisionsLimit] = useState<number>(5)
+  const [decisionsFilter, setDecisionsFilter] = useState<'all' | 'trades'>('all')
 
   // 监听URL变化，同步页面状态
   useEffect(() => {
@@ -291,9 +292,14 @@ function App() {
 
   const { data: decisions } = useSWR<DecisionRecord[]>(
     currentPage === 'trader' && selectedTraderId
-      ? `decisions/latest-${selectedTraderId}-${decisionsLimit}`
+      ? `decisions/latest-${selectedTraderId}-${decisionsLimit}-${decisionsFilter}`
       : null,
-    () => api.getLatestDecisions(selectedTraderId, decisionsLimit),
+    () =>
+      api.getLatestDecisions(
+        selectedTraderId,
+        decisionsLimit,
+        decisionsFilter === 'trades' ? 'trades' : undefined
+      ),
     {
       refreshInterval: 30000, // 30秒刷新（决策更新频率较低）
       revalidateOnFocus: false,
@@ -612,6 +618,8 @@ function App() {
             decisions={decisions}
             decisionsLimit={decisionsLimit}
             onDecisionsLimitChange={setDecisionsLimit}
+            decisionsFilter={decisionsFilter}
+            onDecisionsFilterChange={setDecisionsFilter}
             stats={stats}
             lastUpdate={lastUpdate}
             language={language}
@@ -764,6 +772,8 @@ function TraderDetailsPage({
   decisions,
   decisionsLimit,
   onDecisionsLimitChange,
+  decisionsFilter,
+  onDecisionsFilterChange,
   lastUpdate,
   language,
   traders,
@@ -785,6 +795,8 @@ function TraderDetailsPage({
   decisions?: DecisionRecord[]
   decisionsLimit: number
   onDecisionsLimitChange: (limit: number) => void
+  decisionsFilter: 'all' | 'trades'
+  onDecisionsFilterChange: (filter: 'all' | 'trades') => void
   stats?: Statistics
   lastUpdate: string
   language: Language
@@ -1634,6 +1646,24 @@ function TraderDetailsPage({
                 </div>
               )}
             </div>
+            {/* 周期筛选器 */}
+            <select
+              value={decisionsFilter}
+              onChange={(e) =>
+                onDecisionsFilterChange(e.target.value as 'all' | 'trades')
+              }
+              className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-all"
+              style={{
+                background: '#2B3139',
+                color: '#EAECEF',
+                border: '1px solid #3C4043',
+              }}
+            >
+              <option value="all">{t('decisionFilterAll', language)}</option>
+              <option value="trades">
+                {t('decisionFilterTrades', language)}
+              </option>
+            </select>
             {/* 数量选择器 */}
             <select
               value={decisionsLimit}

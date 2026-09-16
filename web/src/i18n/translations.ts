@@ -59,6 +59,8 @@ export const translations = {
 
     // Recent Decisions
     recentDecisions: 'Recent Decisions',
+    decisionFilterAll: 'All Cycles',
+    decisionFilterTrades: 'Trades Only',
     lastCycles: 'Last {count} trading cycles',
     noDecisionsYet: 'No Decisions Yet',
     aiDecisionsWillAppear: 'AI trading decisions will appear here',
@@ -1269,6 +1271,8 @@ export const translations = {
 
     // Recent Decisions
     recentDecisions: '最近决策',
+    decisionFilterAll: '全部周期',
+    decisionFilterTrades: '仅交易决策',
     lastCycles: '最近 {count} 个交易周期',
     noDecisionsYet: '暂无决策',
     aiDecisionsWillAppear: 'AI交易决策将显示在这里',

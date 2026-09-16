@@ -577,7 +577,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                     {language === 'zh' ? '总收益率' : 'Total Return'}
                   </div>
                   <div className="text-xl font-bold text-green-400">
-                    {((performanceVariant?.totalReturn ?? 0) * 100).toFixed(2)}%
+                    {(performanceVariant?.totalReturn ?? 0).toFixed(2)}%
                   </div>
                 </div>
                 <div>
@@ -585,7 +585,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                     {language === 'zh' ? '胜率' : 'Win Rate'}
                   </div>
                   <div className="text-xl font-bold text-blue-400">
-                    {((performanceVariant?.winRate ?? 0) * 100).toFixed(1)}%
+                    {(performanceVariant?.winRate ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div>
@@ -593,7 +593,7 @@ export function PromptVariantLab({ type, resourceId }: PromptVariantLabProps) {
                     {language === 'zh' ? '最大回撤' : 'Max Drawdown'}
                   </div>
                   <div className="text-xl font-bold text-red-400">
-                    {((performanceVariant?.maxDrawdown ?? 0) * 100).toFixed(1)}%
+                    {(performanceVariant?.maxDrawdown ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div>

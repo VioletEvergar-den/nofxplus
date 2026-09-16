@@ -377,16 +377,20 @@ export const api = {
     return result.data!
   },
 
-  // 获取最新决策（支持trader_id和limit参数）
+  // 获取最新决策（支持trader_id和limit参数，filter=trades 仅返回有交易动作的周期）
   async getLatestDecisions(
     traderId?: string,
-    limit: number = 5
+    limit: number = 5,
+    filter?: 'trades'
   ): Promise<DecisionRecord[]> {
     const params = new URLSearchParams()
     if (traderId) {
       params.append('trader_id', traderId)
     }
     params.append('limit', limit.toString())
+    if (filter) {
+      params.append('filter', filter)
+    }
 
     const result = await httpClient.get<DecisionRecord[]>(
       `${API_BASE}/decisions/latest?${params}`

@@ -2768,12 +2768,37 @@ func (s *Server) handleLatestDecisions(c *gin.Context) {
 		}
 	}
 
-	records, err := trader.GetStore().Decision().GetLatestRecords(trader.GetID(), limit)
+	// Get filter from query parameter: "trades" returns only cycles with actual trading actions
+	filter := c.Query("filter")
+
+	// When filtering by trades, scan a wider window to find the latest N trading cycles
+	fetchLimit := limit
+	if filter == "trades" {
+		fetchLimit = 500
+	}
+
+	records, err := trader.GetStore().Decision().GetLatestRecords(trader.GetID(), fetchLimit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": fmt.Sprintf("Failed to get decision log: %v", err),
 		})
 		return
+	}
+
+	// Filter to cycles that contain at least one trading action (open/close)
+	if filter == "trades" {
+		var filtered []*store.DecisionRecord
+		// records are ordered oldest → newest; iterate backwards to keep the most recent
+		for i := len(records) - 1; i >= 0 && len(filtered) < limit; i-- {
+			if hasTradingAction(records[i]) {
+				filtered = append(filtered, records[i])
+			}
+		}
+		// Restore oldest → newest order so the reversal below yields newest-first display
+		for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
+			filtered[i], filtered[j] = filtered[j], filtered[i]
+		}
+		records = filtered
 	}
 
 	// Reverse array to put newest first (for list display)
@@ -2783,6 +2808,21 @@ func (s *Server) handleLatestDecisions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, records)
+}
+
+// hasTradingAction reports whether a decision record contains at least one
+// actual trading action (open/close), as opposed to hold/wait-only cycles.
+func hasTradingAction(record *store.DecisionRecord) bool {
+	if record == nil {
+		return false
+	}
+	for _, action := range record.Decisions {
+		switch action.Action {
+		case "open_long", "open_short", "close_long", "close_short":
+			return true
+		}
+	}
+	return false
 }
 
 // handleStatistics Statistics information
