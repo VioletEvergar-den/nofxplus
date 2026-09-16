@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, memo } from 'react'
 import {
   LineChart,
   Line,
@@ -35,7 +35,36 @@ interface EquityChartProps {
   traderId?: string
 }
 
-export function EquityChart({ traderId }: EquityChartProps) {
+// 自定义Tooltip - Binance Style（模块级定义，避免每次渲染创建新组件引用导致 Tooltip 子树反复重挂载）
+const CustomTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload
+    return (
+      <div
+        className="rounded p-3 shadow-xl"
+        style={{ background: '#1E2329', border: '1px solid #2B3139' }}
+      >
+        <div className="text-xs mb-1" style={{ color: '#848E9C' }}>
+          Cycle #{data.cycle}
+        </div>
+        <div className="font-bold mono" style={{ color: '#EAECEF' }}>
+          {data.raw_equity.toFixed(2)} USDT
+        </div>
+        <div
+          className="text-sm mono font-bold"
+          style={{ color: data.raw_pnl >= 0 ? '#0ECB81' : '#F6465D' }}
+        >
+          {data.raw_pnl >= 0 ? '+' : ''}
+          {data.raw_pnl.toFixed(2)} USDT ({data.raw_pnl_pct >= 0 ? '+' : ''}
+          {data.raw_pnl_pct}%)
+        </div>
+      </div>
+    )
+  }
+  return null
+}
+
+export const EquityChart = memo(function EquityChart({ traderId }: EquityChartProps) {
   const { language } = useLanguage()
   const { user, token } = useAuth()
   const [displayMode, setDisplayMode] = useState<'dollar' | 'percent'>('dollar')
@@ -96,7 +125,10 @@ export function EquityChart({ traderId }: EquityChartProps) {
   }
 
   // 过滤掉无效数据：total_equity为0或小于1的数据点（API失败导致）
-  const validHistory = history?.filter((point) => point.total_equity > 1) || []
+  const validHistory = useMemo(
+    () => history?.filter((point) => point.total_equity > 1) || [],
+    [history]
+  )
 
   if (!validHistory || validHistory.length === 0) {
     return (
@@ -120,10 +152,13 @@ export function EquityChart({ traderId }: EquityChartProps) {
   // 限制显示最近的数据点（性能优化）
   // 如果数据超过2000个点，只显示最近2000个
   const MAX_DISPLAY_POINTS = 2000
-  const displayHistory =
-    validHistory.length > MAX_DISPLAY_POINTS
-      ? validHistory.slice(-MAX_DISPLAY_POINTS)
-      : validHistory
+  const displayHistory = useMemo(
+    () =>
+      validHistory.length > MAX_DISPLAY_POINTS
+        ? validHistory.slice(-MAX_DISPLAY_POINTS)
+        : validHistory,
+    [validHistory]
+  )
 
   // 计算初始余额（优先从 account 获取配置的初始余额，备选从历史数据反推）
   const initialBalance =
@@ -133,22 +168,26 @@ export function EquityChart({ traderId }: EquityChartProps) {
       : undefined) || // 备选：淨值 - 盈亏
     1000 // 默认值（与创建交易员时的默认配置一致）
 
-  // 转换数据格式
-  const chartData = displayHistory.map((point) => {
-    const pnl = point.total_equity - initialBalance
-    const pnlPct = ((pnl / initialBalance) * 100).toFixed(2)
-    return {
-      time: new Date(point.timestamp).toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
+  // 转换数据格式（memo 化：仅数据/显示模式/初始余额变化时重建，避免父级轮询重渲染导致 recharts 全图重绘）
+  const chartData = useMemo(
+    () =>
+      displayHistory.map((point) => {
+        const pnl = point.total_equity - initialBalance
+        const pnlPct = ((pnl / initialBalance) * 100).toFixed(2)
+        return {
+          time: new Date(point.timestamp).toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          value: displayMode === 'dollar' ? point.total_equity : parseFloat(pnlPct),
+          cycle: point.cycle_number,
+          raw_equity: point.total_equity,
+          raw_pnl: pnl,
+          raw_pnl_pct: parseFloat(pnlPct),
+        }
       }),
-      value: displayMode === 'dollar' ? point.total_equity : parseFloat(pnlPct),
-      cycle: point.cycle_number,
-      raw_equity: point.total_equity,
-      raw_pnl: pnl,
-      raw_pnl_pct: parseFloat(pnlPct),
-    }
-  })
+    [displayHistory, displayMode, initialBalance]
+  )
 
   const currentValue = chartData[chartData.length - 1]
   const isProfit = currentValue.raw_pnl >= 0
@@ -174,34 +213,7 @@ export function EquityChart({ traderId }: EquityChartProps) {
     }
   }
 
-  // 自定义Tooltip - Binance Style
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload
-      return (
-        <div
-          className="rounded p-3 shadow-xl"
-          style={{ background: '#1E2329', border: '1px solid #2B3139' }}
-        >
-          <div className="text-xs mb-1" style={{ color: '#848E9C' }}>
-            Cycle #{data.cycle}
-          </div>
-          <div className="font-bold mono" style={{ color: '#EAECEF' }}>
-            {data.raw_equity.toFixed(2)} USDT
-          </div>
-          <div
-            className="text-sm mono font-bold"
-            style={{ color: data.raw_pnl >= 0 ? '#0ECB81' : '#F6465D' }}
-          >
-            {data.raw_pnl >= 0 ? '+' : ''}
-            {data.raw_pnl.toFixed(2)} USDT ({data.raw_pnl_pct >= 0 ? '+' : ''}
-            {data.raw_pnl_pct}%)
-          </div>
-        </div>
-      )
-    }
-    return null
-  }
+  // 自定义Tooltip已提升为模块级 CustomTooltip，避免每次渲染重新创建组件引用
 
   return (
     <div className="binance-card p-3 sm:p-5 animate-fade-in">
@@ -374,6 +386,7 @@ export function EquityChart({ traderId }: EquityChartProps) {
               dataKey="value"
               stroke="url(#colorGradient)"
               strokeWidth={3}
+              isAnimationActive={false}
               dot={chartData.length > 50 ? false : { fill: '#F0B90B', r: 3 }}
               activeDot={{
                 r: 6,
@@ -465,4 +478,4 @@ export function EquityChart({ traderId }: EquityChartProps) {
       </div>
     </div>
   )
-}
+})

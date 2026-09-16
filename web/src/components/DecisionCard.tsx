@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import type { DecisionRecord, DecisionAction } from '../types'
 import { t, type Language } from '../i18n/translations'
 
@@ -217,7 +217,7 @@ function ActionCard({ action, language, onSymbolClick }: { action: DecisionActio
   )
 }
 
-export function DecisionCard({ decision, language, onSymbolClick }: DecisionCardProps) {
+export const DecisionCard = memo(function DecisionCard({ decision, language, onSymbolClick }: DecisionCardProps) {
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [showInputPrompt, setShowInputPrompt] = useState(false)
   const [showCoT, setShowCoT] = useState(false)
@@ -478,4 +478,4 @@ export function DecisionCard({ decision, language, onSymbolClick }: DecisionCard
       )}
     </div>
   )
-}
+})

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import useSWR, { mutate } from 'swr'
 import { api } from './lib/api'
 import { MarketChartCard } from './components/MarketChartCard'
@@ -865,15 +865,15 @@ function TraderDetailsPage({
     }
   }
 
-  // Handle symbol click from Decision Card
-  const handleSymbolClick = (symbol: string) => {
+  // Handle symbol click from Decision Card（useCallback 稳定引用，配合 DecisionCard 的 memo 避免整列表重渲染）
+  const handleSymbolClick = useCallback((symbol: string) => {
     // Set the selected symbol
     setSelectedChartSymbol(symbol)
     // Scroll to chart section
     setTimeout(() => {
       chartSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 100)
-  }
+  }, [])
 
   // 平仓操作
   const handleClosePosition = async (symbol: string, side: string) => {

@@ -510,9 +510,18 @@ export function TraderConfigModal({
                       : 'When enabled, the system dynamically speeds up or slows down scanning based on market volatility (may scan much faster than the interval above and consume more AI calls). Default off.'}
                   </p>
                 </div>
-                <div>
-                  <label className="text-sm text-[#EAECEF] block mb-2">
-                    {language === 'zh' ? '浮盈回撤保护' : 'Profit Giveback Protection'}
+                <div
+                  className={`rounded-lg p-2 -m-2 border ${
+                    formData.giveback_mode !== 'off'
+                      ? 'border-[#F0B90B]/60 bg-[#F0B90B]/5'
+                      : 'border-transparent'
+                  }`}
+                >
+                  <label
+                    className="text-sm block mb-2 flex items-center gap-1"
+                    style={{ color: formData.giveback_mode !== 'off' ? '#F0B90B' : '#EAECEF' }}
+                  >
+                    🛡️ {language === 'zh' ? '浮盈回撤保护' : 'Profit Giveback Protection'}
                   </label>
                   <div className="flex gap-2">
                     {([

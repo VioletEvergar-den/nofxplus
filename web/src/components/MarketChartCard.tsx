@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { AdvancedChart } from './AdvancedChart'
 import { useLanguage } from '../contexts/LanguageContext'
 import { t } from '../i18n/translations'
@@ -46,8 +46,8 @@ function getMarketTypeFromExchange(exchangeId: string | undefined): MarketType {
   return 'crypto'
 }
 
-// 行情图表卡片（独立组件，从 ChartTabs 拆分而来）
-export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeId, defaultSymbol }: MarketChartCardProps) {
+// 行情图表卡片（独立组件，从 ChartTabs 拆分而来；memo 化避免父级轮询重渲染穿透到图表）
+export const MarketChartCard = memo(function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeId, defaultSymbol }: MarketChartCardProps) {
   const { language } = useLanguage()
   const [chartSymbol, setChartSymbol] = useState<string>('BTC')
   const [interval, setInterval] = useState<Interval>('5m')
@@ -324,4 +324,4 @@ export function MarketChartCard({ traderId, selectedSymbol, updateKey, exchangeI
       />
     </div>
   )
-}
+})

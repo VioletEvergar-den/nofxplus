@@ -97,6 +97,7 @@ export function AdvancedChart({
   const seriesMarkersRef = useRef<any>(null) // Markers primitive for v5
   const currentMarkersDataRef = useRef<any[]>([]) // 存储当前的标记数据
   const klineDataRef = useRef<Map<number, { volume: number; quoteVolume: number }>>(new Map()) // 存储 kline 额外数据
+  const lastKlineDataRef = useRef<Kline[]>([]) // 上一次完整 K 线快照，用于增量对比避免每 5 秒全量重绘
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -455,6 +456,7 @@ export function AdvancedChart({
   useEffect(() => {
     // 当 symbol 或 interval 改变时，重置初始加载标志（以便自动适配新数据）
     isInitialLoadRef.current = true
+    lastKlineDataRef.current = []
 
     // 清除旧的标记数据，避免旧数据影响新图表
     currentMarkersDataRef.current = []
@@ -479,13 +481,62 @@ export function AdvancedChart({
       try {
         // 1. 获取K线数据
         const klineData = await fetchKlineData(symbol, interval)
-        candlestickSeriesRef.current.setData(klineData)
+
+        // ===== 增量更新优化 =====
+        // 刷新时与上次快照对比：无变化则跳过、仅尾部变化则只 update 尾部蜡烛，
+        // 避免每 5 秒对 1500 根 K 线做全量 setData 触发 canvas 全量重绘（Edge 软渲染下尤为卡顿）
+        const prevData = lastKlineDataRef.current
+        const prevLen = prevData.length
+        const newLen = klineData.length
+        let applyMode: 'full' | 'tail' | 'skip' = 'full'
+        let tailStart = 0 // klineData 中需要增量 update 的起始下标
+
+        if (isRefresh && prevLen > 0 && newLen > 0) {
+          const prevLast = prevData[prevLen - 1]
+          const newLast = klineData[newLen - 1]
+          if (newLen === prevLen && newLast.time === prevLast.time) {
+            // 长度不变：只有最后一根（进行中蜡烛）可能变化
+            const tailChanged =
+              newLast.open !== prevLast.open ||
+              newLast.high !== prevLast.high ||
+              newLast.low !== prevLast.low ||
+              newLast.close !== prevLast.close ||
+              newLast.volume !== prevLast.volume
+            applyMode = tailChanged ? 'tail' : 'skip'
+            tailStart = newLen - 1
+          } else if (
+            newLen > prevLen &&
+            newLast.time > prevLast.time &&
+            klineData[prevLen - 1] &&
+            klineData[prevLen - 1].time === prevLast.time
+          ) {
+            // 追加了新蜡烛且旧数据对齐：从最后一根旧蜡烛（可能已收盘变化）开始增量 update
+            applyMode = 'tail'
+            tailStart = prevLen - 1
+          }
+        }
+
+        if (applyMode === 'tail') {
+          for (let i = tailStart; i < newLen; i++) {
+            candlestickSeriesRef.current.update(klineData[i] as any)
+          }
+        } else if (applyMode === 'full') {
+          candlestickSeriesRef.current.setData(klineData)
+        }
+        lastKlineDataRef.current = klineData
 
         // 存储 volume/quoteVolume 数据供 tooltip 使用
-        klineDataRef.current.clear()
-        klineData.forEach((k: any) => {
-          klineDataRef.current.set(k.time, { volume: k.volume || 0, quoteVolume: k.quoteVolume || 0 })
-        })
+        if (applyMode === 'full') {
+          klineDataRef.current.clear()
+          klineData.forEach((k: any) => {
+            klineDataRef.current.set(k.time, { volume: k.volume || 0, quoteVolume: k.quoteVolume || 0 })
+          })
+        } else if (applyMode === 'tail') {
+          for (let i = tailStart; i < newLen; i++) {
+            const k: any = klineData[i]
+            klineDataRef.current.set(k.time, { volume: k.volume || 0, quoteVolume: k.quoteVolume || 0 })
+          }
+        }
 
         // 1.5 计算行情统计数据
         if (klineData.length > 1) {
@@ -518,24 +569,39 @@ export function AdvancedChart({
           })
         }
 
-        // 2. 显示成交量
+        // 2. 显示成交量（与主图同步走增量路径）
         if (volumeSeriesRef.current) {
           const volumeEnabled = indicators.find(i => i.id === 'volume')?.enabled
           if (volumeEnabled) {
-            const volumeData = klineData.map((k: Kline) => ({
-              time: k.time,
-              value: k.volume || 0,
-              color: k.close >= k.open ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)',
-            }))
-            volumeSeriesRef.current.setData(volumeData)
-          } else {
-            // 关闭成交量时清空数据
+            if (applyMode === 'tail') {
+              for (let i = tailStart; i < newLen; i++) {
+                const k: any = klineData[i]
+                volumeSeriesRef.current.update({
+                  time: k.time,
+                  value: k.volume || 0,
+                  color: k.close >= k.open ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)',
+                })
+              }
+            } else if (applyMode === 'full') {
+              const volumeData = klineData.map((k: Kline) => ({
+                time: k.time,
+                value: k.volume || 0,
+                color: k.close >= k.open ? 'rgba(14, 203, 129, 0.5)' : 'rgba(246, 70, 93, 0.5)',
+              }))
+              volumeSeriesRef.current.setData(volumeData)
+            }
+            // applyMode === 'skip' 时成交量也无变化，跳过
+          } else if (applyMode === 'full') {
+            // 关闭成交量时清空数据（仅全量路径需要处理）
             volumeSeriesRef.current.setData([])
           }
         }
 
-        // 3. 添加指标
-        updateIndicators(klineData)
+        // 3. 添加指标（skip 时跳过；tail 且未启用叠加指标时跳过，避免无谓重建）
+        const hasOverlayIndicator = indicators.some(i => i.enabled && i.id !== 'volume')
+        if (applyMode === 'full' || (applyMode === 'tail' && hasOverlayIndicator)) {
+          updateIndicators(klineData)
+        }
 
         // 4. 获取并显示订单标记（只在首次加载时拉取，避免每 5 秒重复请求与重建标记）
         if (traderID && candlestickSeriesRef.current && !isRefresh) {
