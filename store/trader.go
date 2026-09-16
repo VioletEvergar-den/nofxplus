@@ -33,6 +33,8 @@ type Trader struct {
 	EnableLLMFeedback     bool      `json:"enable_llm_feedback"`     // Enable LLM-assisted feedback analysis
 	EnablePromptEvolution bool      `json:"enable_prompt_evolution"` // Enable prompt evolution
 	AdaptiveInterval      bool      `json:"adaptive_interval"`       // Enable adaptive scan interval (market-volatility based); default off = strictly use scan_interval_minutes
+	GivebackMode          string    `json:"giveback_mode"`           // 浮盈回撤保护模式: off=关闭(提示词不出现该规则) / soft=软规则(AI每次开仓决定) / hard=硬规则(用户固定值)
+	GivebackHardPct       float64   `json:"giveback_hard_pct"`       // 硬规则回撤阈值百分比（giveback_mode=hard 时生效）
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
 
@@ -71,6 +73,8 @@ func (s *TraderStore) initTables() error {
 		enable_llm_feedback BOOLEAN DEFAULT 1,
 		enable_prompt_evolution BOOLEAN DEFAULT 1,
 		adaptive_interval BOOLEAN DEFAULT 0,
+		giveback_mode TEXT DEFAULT 'off',
+		giveback_hard_pct REAL DEFAULT 0,
         btc_eth_leverage INTEGER DEFAULT 5,
         altcoin_leverage INTEGER DEFAULT 5,
         trading_symbols TEXT DEFAULT '',
@@ -116,6 +120,8 @@ func (s *TraderStore) initTables() error {
 	s.addColumnIfNotExists("traders", "enable_llm_feedback", "BOOLEAN DEFAULT 1")
 	s.addColumnIfNotExists("traders", "enable_prompt_evolution", "BOOLEAN DEFAULT 1")
 	s.addColumnIfNotExists("traders", "adaptive_interval", "BOOLEAN DEFAULT 0")
+	s.addColumnIfNotExists("traders", "giveback_mode", "TEXT DEFAULT 'off'")
+	s.addColumnIfNotExists("traders", "giveback_hard_pct", "REAL DEFAULT 0")
 
 	return nil
 }
@@ -239,15 +245,15 @@ func (s *TraderStore) Create(trader *Trader) error {
 	_, err := s.db.Exec(`
 		INSERT INTO traders (id, user_id, name, ai_model_id, exchange_id, strategy_id, initial_balance,
 		                     scan_interval_minutes, trading_mode, is_running, enable_feedback, enable_llm_feedback, enable_prompt_evolution,
-		                     adaptive_interval,
+		                     adaptive_interval, giveback_mode, giveback_hard_pct,
 		                     is_cross_margin, show_in_competition, paper_trading,
 		                     btc_eth_leverage, altcoin_leverage, trading_symbols, use_coin_pool,
 		                     use_oi_top, custom_prompt, override_base_prompt, system_prompt_template)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, trader.ID, trader.UserID, trader.Name, trader.AIModelID, trader.ExchangeID, trader.StrategyID,
 		trader.InitialBalance, trader.ScanIntervalMinutes, trader.TradingMode, trader.IsRunning,
 		trader.EnableFeedback, trader.EnableLLMFeedback, trader.EnablePromptEvolution,
-		trader.AdaptiveInterval,
+		trader.AdaptiveInterval, trader.GivebackMode, trader.GivebackHardPct,
 		trader.IsCrossMargin, trader.ShowInCompetition, trader.PaperTrading,
 		trader.BTCETHLeverage, trader.AltcoinLeverage, trader.TradingSymbols, trader.UseCoinPool,
 		trader.UseOITop, trader.CustomPrompt, trader.OverrideBasePrompt, trader.SystemPromptTemplate)
@@ -261,6 +267,7 @@ func (s *TraderStore) List(userID string) ([]*Trader, error) {
 		       initial_balance, scan_interval_minutes, COALESCE(trading_mode, ''), is_running,
 		       COALESCE(enable_feedback, 1), COALESCE(enable_llm_feedback, 1), COALESCE(enable_prompt_evolution, 1), COALESCE(is_cross_margin, 1),
 		       COALESCE(adaptive_interval, 0),
+		       COALESCE(giveback_mode, 'off'), COALESCE(giveback_hard_pct, 0),
 		       COALESCE(show_in_competition, 1), COALESCE(paper_trading, 0),
 		       COALESCE(btc_eth_leverage, 5), COALESCE(altcoin_leverage, 5), COALESCE(trading_symbols, ''),
 		       COALESCE(use_coin_pool, 0), COALESCE(use_oi_top, 0), COALESCE(custom_prompt, ''),
@@ -282,6 +289,7 @@ func (s *TraderStore) List(userID string) ([]*Trader, error) {
 			&t.InitialBalance, &t.ScanIntervalMinutes, &t.TradingMode, &t.IsRunning,
 			&t.EnableFeedback, &t.EnableLLMFeedback, &t.EnablePromptEvolution, &t.IsCrossMargin,
 			&t.AdaptiveInterval,
+			&t.GivebackMode, &t.GivebackHardPct,
 			&t.ShowInCompetition, &t.PaperTrading,
 			&t.BTCETHLeverage, &t.AltcoinLeverage, &t.TradingSymbols,
 			&t.UseCoinPool, &t.UseOITop, &t.CustomPrompt, &t.OverrideBasePrompt,
@@ -326,6 +334,8 @@ func (s *TraderStore) Update(trader *Trader) error {
 			enable_llm_feedback = ?,
 			enable_prompt_evolution = ?,
 			adaptive_interval = ?,
+			giveback_mode = ?,
+			giveback_hard_pct = ?,
 			is_cross_margin = ?,
 			show_in_competition = ?,
 			paper_trading = ?,
@@ -337,6 +347,7 @@ func (s *TraderStore) Update(trader *Trader) error {
 		trader.TradingMode,
 		trader.EnableFeedback, trader.EnableLLMFeedback, trader.EnablePromptEvolution,
 		trader.AdaptiveInterval,
+		trader.GivebackMode, trader.GivebackHardPct,
 		trader.IsCrossMargin, trader.ShowInCompetition, trader.PaperTrading,
 		trader.ID, trader.UserID)
 	return err
@@ -380,6 +391,7 @@ func (s *TraderStore) GetFullConfig(userID, traderID string) (*TraderFullConfig,
 			t.initial_balance, t.scan_interval_minutes, t.is_running,
 			COALESCE(t.enable_feedback, 1), COALESCE(t.enable_llm_feedback, 1), COALESCE(t.enable_prompt_evolution, 1), COALESCE(t.is_cross_margin, 1),
 			COALESCE(t.adaptive_interval, 0),
+			COALESCE(t.giveback_mode, 'off'), COALESCE(t.giveback_hard_pct, 0),
 			COALESCE(t.show_in_competition, 1), COALESCE(t.paper_trading, 0),
 			COALESCE(t.btc_eth_leverage, 5), COALESCE(t.altcoin_leverage, 5), COALESCE(t.trading_symbols, ''),
 			COALESCE(t.use_coin_pool, 0), COALESCE(t.use_oi_top, 0), COALESCE(t.custom_prompt, ''),
@@ -400,6 +412,7 @@ func (s *TraderStore) GetFullConfig(userID, traderID string) (*TraderFullConfig,
 		&trader.InitialBalance, &trader.ScanIntervalMinutes, &trader.IsRunning,
 		&trader.EnableFeedback, &trader.EnableLLMFeedback, &trader.EnablePromptEvolution, &trader.IsCrossMargin,
 		&trader.AdaptiveInterval,
+		&trader.GivebackMode, &trader.GivebackHardPct,
 		&trader.ShowInCompetition, &trader.PaperTrading,
 		&trader.BTCETHLeverage, &trader.AltcoinLeverage, &trader.TradingSymbols,
 		&trader.UseCoinPool, &trader.UseOITop, &trader.CustomPrompt, &trader.OverrideBasePrompt,

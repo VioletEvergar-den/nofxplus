@@ -462,6 +462,8 @@ type CreateTraderRequest struct {
 	EnableLLMFeedback     *bool   `json:"enable_llm_feedback"`     // Pointer type, nil means use default value true
 	EnablePromptEvolution *bool   `json:"enable_prompt_evolution"` // Pointer type, nil means use default value true
 	AdaptiveInterval      *bool   `json:"adaptive_interval"`       // Pointer type, nil means use default value false
+	GivebackMode          string  `json:"giveback_mode"`           // 浮盈回撤保护: off/soft/hard（空=off）
+	GivebackHardPct       float64 `json:"giveback_hard_pct"`       // 硬规则阈值百分比（mode=hard 时生效）
 	// The following fields are kept for backward compatibility, new version uses strategy config
 	BTCETHLeverage       int    `json:"btc_eth_leverage"`
 	AltcoinLeverage      int    `json:"altcoin_leverage"`
@@ -741,6 +743,8 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		EnableLLMFeedback:     enableLLMFeedback,
 		EnablePromptEvolution: enablePromptEvolution,
 		AdaptiveInterval:      req.AdaptiveInterval != nil && *req.AdaptiveInterval,
+		GivebackMode:          normalizeGivebackMode(req.GivebackMode),
+		GivebackHardPct:       clampGivebackPct(req.GivebackHardPct),
 		ScanIntervalMinutes:   scanIntervalMinutes,
 		IsRunning:             false,
 	}
@@ -789,6 +793,8 @@ type UpdateTraderRequest struct {
 	EnableLLMFeedback     *bool   `json:"enable_llm_feedback"`
 	EnablePromptEvolution *bool   `json:"enable_prompt_evolution"`
 	AdaptiveInterval      *bool   `json:"adaptive_interval"`
+	GivebackMode          string  `json:"giveback_mode"`     // 浮盈回撤保护: off/soft/hard（空=off）
+	GivebackHardPct       float64 `json:"giveback_hard_pct"` // 硬规则阈值百分比（mode=hard 时生效）
 	// The following fields are kept for backward compatibility, new version uses strategy config
 	BTCETHLeverage       int    `json:"btc_eth_leverage"`
 	AltcoinLeverage      int    `json:"altcoin_leverage"`
@@ -796,6 +802,27 @@ type UpdateTraderRequest struct {
 	CustomPrompt         string `json:"custom_prompt"`
 	OverrideBasePrompt   bool   `json:"override_base_prompt"`
 	SystemPromptTemplate string `json:"system_prompt_template"`
+}
+
+// normalizeGivebackMode 校验浮盈回撤保护模式，仅接受 off/soft/hard，其余视为 off。
+func normalizeGivebackMode(mode string) string {
+	switch mode {
+	case "soft", "hard":
+		return mode
+	default:
+		return "off"
+	}
+}
+
+// clampGivebackPct 钳制硬规则回撤阈值到 0-90。
+func clampGivebackPct(pct float64) float64 {
+	if pct < 0 {
+		return 0
+	}
+	if pct > 90 {
+		return 90
+	}
+	return pct
 }
 
 // handleUpdateTrader Update trader configuration
@@ -907,6 +934,8 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		EnableLLMFeedback:     enableLLMFeedback,
 		EnablePromptEvolution: enablePromptEvolution,
 		AdaptiveInterval:      req.AdaptiveInterval != nil && *req.AdaptiveInterval,
+		GivebackMode:          normalizeGivebackMode(req.GivebackMode),
+		GivebackHardPct:       clampGivebackPct(req.GivebackHardPct),
 		ScanIntervalMinutes:   scanIntervalMinutes,
 		IsRunning:             existingTrader.IsRunning, // Keep original value
 	}
@@ -2201,6 +2230,8 @@ func (s *Server) handleGetTraderConfig(c *gin.Context) {
 		"use_oi_top":              traderConfig.UseOITop,
 		"enable_feedback":         traderConfig.EnableFeedback,
 		"adaptive_interval":       traderConfig.AdaptiveInterval,
+		"giveback_mode":           traderConfig.GivebackMode,
+		"giveback_hard_pct":       traderConfig.GivebackHardPct,
 		"enable_llm_feedback":     traderConfig.EnableLLMFeedback,
 		"enable_prompt_evolution": traderConfig.EnablePromptEvolution,
 		"show_in_competition":     traderConfig.ShowInCompetition,

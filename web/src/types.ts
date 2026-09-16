@@ -171,6 +171,8 @@ export interface CreateTraderRequest {
   show_in_competition?: boolean // 是否在竞技场显示
   enable_feedback?: boolean // Enable feedback analysis (default: true)
   adaptive_interval?: boolean // Enable adaptive scan interval (default: false)
+  giveback_mode?: string // 浮盈回撤保护模式: "off"(关闭) / "soft"(AI决定) / "hard"(固定值)
+  giveback_hard_pct?: number // 硬规则回撤阈值（%），仅 hard 模式生效
   enable_llm_feedback?: boolean // Enable LLM-assisted feedback analysis (default: true)
   enable_prompt_evolution?: boolean // Enable prompt variant evolution (default: true)
   // 以下字段为向后兼容保留，新版使用策略配置
@@ -255,6 +257,8 @@ export interface TraderConfigData {
   enable_llm_feedback?: boolean  // 启用LLM反馈分析
   enable_prompt_evolution?: boolean  // 启用提示词进化
   adaptive_interval?: boolean  // 启用自适应扫描间隔（按市场波动动态调整）；默认关闭=严格按扫描间隔执行
+  giveback_mode?: string  // 浮盈回撤保护模式: "off"(关闭) / "soft"(AI决定) / "hard"(固定值)
+  giveback_hard_pct?: number  // 硬规则回撤阈值（%），仅 hard 模式生效
   // 以下为旧版字段（向后兼容）
   btc_eth_leverage?: number
   altcoin_leverage?: number

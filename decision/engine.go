@@ -189,6 +189,8 @@ type Context struct {
 	BTCETHLeverage         int                                     `json:"-"`
 	AltcoinLeverage        int                                     `json:"-"`
 	Timeframes             []string                                `json:"-"`
+	GivebackMode           string                                  `json:"-"` // 浮盈回撤保护模式: off(默认,提示词不出现) / soft(软规则,AI决定) / hard(硬规则,用户固定值,AI无需知道)
+	GivebackHardPct        float64                                 `json:"-"` // 硬规则阈值（mode=hard 时执行层直接使用，提示词不渲染）
 }
 
 // Decision AI trading decision
@@ -1050,8 +1052,17 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 	sb.WriteString("```json\n[\n")
 	// Use the actual configured position value ratio for BTC/ETH in the example
 	examplePositionSize := accountEquity * btcEthPosValueRatio
-	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000, \"profit_giveback_pct\": 30, \"confidence\": 85, \"risk_usd\": 300},\n",
-		riskControl.BTCETHMaxLeverage, examplePositionSize))
+	// 浮盈回撤规则仅在软规则模式下呈现给 AI：
+	// - off（关闭）：提示词完全不出现该字段，避免干扰模型判断
+	// - hard（硬规则）：阈值由用户固定、执行层强制使用，AI 无需知道
+	// - soft（软规则）：AI 每次开仓自行决定是否启用及数值
+	givebackSoftMode := ctx != nil && ctx.GivebackMode == "soft"
+	exampleGiveback := ""
+	if givebackSoftMode {
+		exampleGiveback = ", \"profit_giveback_pct\": 30"
+	}
+	sb.WriteString(fmt.Sprintf("  {\"symbol\": \"BTCUSDT\", \"action\": \"open_short\", \"leverage\": %d, \"position_size_usd\": %.0f, \"stop_loss\": 97000, \"take_profit\": 91000%s, \"confidence\": 85, \"risk_usd\": 300},\n",
+		riskControl.BTCETHMaxLeverage, examplePositionSize, exampleGiveback))
 	sb.WriteString("  {\"symbol\": \"ETHUSDT\", \"action\": \"close_long\"}\n")
 	sb.WriteString("]\n```\n")
 	sb.WriteString("</decision>\n\n")
@@ -1059,7 +1070,9 @@ func (e *StrategyEngine) BuildSystemPromptWithContext(accountEquity float64, ctx
 	sb.WriteString("- `action`: open_long | open_short | close_long | close_short | hold | wait\n")
 	sb.WriteString(fmt.Sprintf("- `confidence`: 0-100 (opening recommended ≥ %d)\n", riskControl.MinConfidence))
 	sb.WriteString("- Required when opening: leverage, position_size_usd, stop_loss, take_profit, confidence, risk_usd\n")
-	sb.WriteString("- Optional when opening: `profit_giveback_pct` (0-90, default 0 = disabled). Trailing profit protection: once unrealized profit reaches a peak, the position is automatically closed when profit falls back by this percentage from the peak. Choose based on volatility and leverage: high volatility or high leverage → smaller value (15-30); low volatility → larger value (40-60). Omit or use 0 to disable.\n")
+	if givebackSoftMode {
+		sb.WriteString("- Optional when opening: `profit_giveback_pct` (0-90, default 0 = disabled). Trailing profit protection: once unrealized profit reaches a peak, the position is automatically closed when profit falls back by this percentage from the peak. Choose based on volatility and leverage: high volatility or high leverage → smaller value (15-30); low volatility → larger value (40-60). Omit or use 0 to disable.\n")
+	}
 	sb.WriteString("- **IMPORTANT**: All numeric values must be calculated numbers, NOT formulas/expressions (e.g., use `27.76` not `3000 * 0.01`)\n\n")
 
 	return sb.String()

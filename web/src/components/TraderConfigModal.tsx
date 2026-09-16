@@ -40,6 +40,8 @@ interface FormState {
   enable_llm_feedback: boolean
   enable_prompt_evolution: boolean
   adaptive_interval: boolean
+  giveback_mode: string
+  giveback_hard_pct: number
 }
 
 interface TraderConfigModalProps {
@@ -75,6 +77,8 @@ export function TraderConfigModal({
     enable_llm_feedback: true,
     enable_prompt_evolution: true,
     adaptive_interval: false,
+    giveback_mode: 'off',
+    giveback_hard_pct: 30,
   })
   const [isSaving, setIsSaving] = useState(false)
   const [strategies, setStrategies] = useState<Strategy[]>([])
@@ -118,6 +122,8 @@ export function TraderConfigModal({
         enable_llm_feedback: traderData.enable_llm_feedback ?? true,
         enable_prompt_evolution: traderData.enable_prompt_evolution ?? true,
         adaptive_interval: traderData.adaptive_interval ?? false,
+        giveback_mode: traderData.giveback_mode || 'off',
+        giveback_hard_pct: traderData.giveback_hard_pct ?? 30,
       })
     } else if (!isEditMode) {
       setFormData({
@@ -133,6 +139,8 @@ export function TraderConfigModal({
         enable_llm_feedback: true,
         enable_prompt_evolution: true,
         adaptive_interval: false,
+        giveback_mode: 'off',
+        giveback_hard_pct: 30,
       })
     }
   }, [traderData, isEditMode, availableModels, availableExchanges])
@@ -192,6 +200,8 @@ export function TraderConfigModal({
         enable_llm_feedback: formData.enable_llm_feedback,
         enable_prompt_evolution: formData.enable_prompt_evolution,
         adaptive_interval: formData.adaptive_interval,
+        giveback_mode: formData.giveback_mode,
+        giveback_hard_pct: formData.giveback_hard_pct,
       }
 
       // 只在编辑模式时包含initial_balance
@@ -499,6 +509,61 @@ export function TraderConfigModal({
                       ? '开启后系统会根据市场波动自动加速或放慢扫描（可能远快于上方间隔，消耗更多AI调用）。默认关闭。'
                       : 'When enabled, the system dynamically speeds up or slows down scanning based on market volatility (may scan much faster than the interval above and consume more AI calls). Default off.'}
                   </p>
+                </div>
+                <div>
+                  <label className="text-sm text-[#EAECEF] block mb-2">
+                    {language === 'zh' ? '浮盈回撤保护' : 'Profit Giveback Protection'}
+                  </label>
+                  <div className="flex gap-2">
+                    {([
+                      { value: 'off', zh: '关闭', en: 'Off' },
+                      { value: 'soft', zh: '软规则（AI决定）', en: 'Soft (AI decides)' },
+                      { value: 'hard', zh: '硬规则（固定值）', en: 'Hard (fixed)' },
+                    ]).map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => handleInputChange('giveback_mode', opt.value)}
+                        className={`flex-1 px-3 py-2 rounded text-sm ${
+                          formData.giveback_mode === opt.value
+                            ? 'bg-[#F0B90B] text-black'
+                            : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                        }`}
+                      >
+                        {language === 'zh' ? opt.zh : opt.en}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {language === 'zh'
+                      ? '追踪持仓浮盈峰值，浮盈从峰值回落超过阈值时程序自动市价平仓（每30秒检查一次）。'
+                      : 'Tracks peak unrealized profit; the position is auto-closed at market when profit falls back beyond the threshold (checked every 30s).'}
+                  </p>
+                  {formData.giveback_mode === 'hard' && (
+                    <div className="mt-3">
+                      <label className="text-sm text-[#EAECEF] block mb-2">
+                        {language === 'zh' ? '回撤阈值（%）' : 'Giveback threshold (%)'}
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.giveback_hard_pct}
+                        onChange={(e) => {
+                          const parsed = Number(e.target.value)
+                          const safe = Number.isFinite(parsed) ? Math.min(90, Math.max(1, parsed)) : 30
+                          handleInputChange('giveback_hard_pct', safe)
+                        }}
+                        className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                        min="1"
+                        max="90"
+                        step="1"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {language === 'zh'
+                          ? '对所有新开仓强制生效，AI 无法修改。软规则模式下由 AI 每次开仓自行决定。关闭时提示词中完全不出现该规则。'
+                          : 'Enforced on every new position; AI cannot override. In Soft mode AI decides per trade. When Off, this rule is hidden from the AI prompt entirely.'}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm text-[#EAECEF] block mb-2">

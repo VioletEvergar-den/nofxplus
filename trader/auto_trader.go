@@ -80,6 +80,10 @@ type AutoTraderConfig struct {
 	OrderSyncInterval time.Duration // Order sync interval (default 30 seconds, can be adjusted per exchange)
 	AdaptiveInterval  bool          // Enable adaptive scan interval based on market volatility; default off = strictly use ScanInterval
 
+	// 浮盈回撤保护模式: off=关闭(提示词不出现) / soft=软规则(AI每次开仓决定) / hard=硬规则(用户固定值)
+	GivebackMode    string
+	GivebackHardPct float64
+
 	// Account configuration
 	InitialBalance float64 // Initial balance (for P&L calculation, must be set manually)
 
@@ -1199,6 +1203,7 @@ func (at *AutoTrader) buildTradingContext() (*decision.Context, error) {
 		},
 		Positions:      positionInfos,
 		CandidateCoins: candidateCoins,
+		GivebackMode:   at.GivebackMode,
 	}
 
 	// Surface current risk-control parameters will be populated from stats below
@@ -1619,7 +1624,7 @@ func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, act
 	}
 
 	// Persist AI-provided SL/TP to the open position record (OrderSync creates the record asynchronously)
-	at.persistInitialSLTP(decision.Symbol, "LONG", decision.StopLoss, decision.TakeProfit, decision.ProfitGivebackPct)
+	at.persistInitialSLTP(decision.Symbol, "LONG", decision.StopLoss, decision.TakeProfit, at.effectiveGivebackPct(decision.ProfitGivebackPct))
 
 	return nil
 }
@@ -1752,7 +1757,7 @@ func (at *AutoTrader) executeOpenShortWithRecord(decision *decision.Decision, ac
 	}
 
 	// Persist AI-provided SL/TP to the open position record (OrderSync creates the record asynchronously)
-	at.persistInitialSLTP(decision.Symbol, "SHORT", decision.StopLoss, decision.TakeProfit, decision.ProfitGivebackPct)
+	at.persistInitialSLTP(decision.Symbol, "SHORT", decision.StopLoss, decision.TakeProfit, at.effectiveGivebackPct(decision.ProfitGivebackPct))
 
 	return nil
 }
@@ -3448,6 +3453,33 @@ func getSideFromAction(action string) string {
 		return "SELL"
 	default:
 		return "BUY"
+	}
+}
+
+// effectiveGivebackPct 根据浮盈回撤保护模式计算实际生效的阈值：
+//   - off（默认/关闭）→ 0，禁用
+//   - soft（软规则）→ AI 本次决策输出的值（钳制 0-90）
+//   - hard（硬规则）→ 用户配置的固定值（钳制 1-90），忽略 AI 输出
+func (at *AutoTrader) effectiveGivebackPct(decisionPct float64) float64 {
+	switch at.GivebackMode {
+	case "soft":
+		if decisionPct < 0 {
+			return 0
+		}
+		if decisionPct > 90 {
+			return 90
+		}
+		return decisionPct
+	case "hard":
+		if at.GivebackHardPct <= 0 {
+			return 0
+		}
+		if at.GivebackHardPct > 90 {
+			return 90
+		}
+		return at.GivebackHardPct
+	default:
+		return 0
 	}
 }
 
