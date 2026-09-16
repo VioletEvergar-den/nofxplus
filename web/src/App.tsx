@@ -1778,7 +1778,7 @@ function TraderDetailsPage({
         </div>
         {/* 左侧栏结束 */}
 
-        {/* 右侧：最近决策（与左栏等高，内部列表铺满滚动） */}
+        {/* 右侧：最近决策（底部与左栏持仓卡齐平，列表在卡内滚动） */}
         <div
           className="flex flex-col binance-card p-6 animate-slide-in"
           style={{ animationDelay: '0.12s' }}
@@ -1844,7 +1844,7 @@ function TraderDetailsPage({
             </select>
           </div>
 
-          {/* 决策列表 - 可滚动（flex 铺满卡片剩余高度，消除下方空洞） */}
+          {/* 决策列表 - 可滚动（铺满卡片剩余高度，卡片底部与左栏持仓卡齐平） */}
           <div
             className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-2"
           >
