@@ -478,17 +478,27 @@ export function AdvancedChart({
       const rect = chartEl.getBoundingClientRect()
       const y = e.clientY - rect.top
       const mainPaneHeight = c.panes()[0]?.getHeight() ?? rect.height
-      const top = series.coordinateToPrice(0) as any // 主图顶部对应价格（最大值）
-      const bottom = series.coordinateToPrice(mainPaneHeight) as any // 主图底部对应价格（最小值）
+      // 取主图价格轴的真实可视价格区间：scaleMargins 使价格范围映射在
+      // [top*H, (1-bottom)*H]，直接取 y=0/H 会线性外推出偏大约 22% 的区间，
+      // 导致每次滚轮都把区间越滚越大（上下滚都变大）
+      const margins = (c.priceScale('right').options() as any).scaleMargins ?? { top: 0.1, bottom: 0.08 }
+      const yMax = (margins.top ?? 0.1) * mainPaneHeight
+      const yMin = (1 - (margins.bottom ?? 0.08)) * mainPaneHeight
+      const top = series.coordinateToPrice(yMax) as any // 可视最高价
+      const bottom = series.coordinateToPrice(yMin) as any // 可视最低价
       if (top == null || bottom == null || !isFinite(top) || !isFinite(bottom) || top <= bottom) return
       const anchor = series.coordinateToPrice(y) as any
-      const anchorPrice = anchor != null && isFinite(anchor) ? anchor : (top + bottom) / 2
+      // 锚点限制在可视区间内，避免在 margin 区域外滚时把区间拉飞
+      const anchorPrice = anchor != null && isFinite(anchor) ? Math.min(Math.max(anchor, bottom), top) : (top + bottom) / 2
       // 向上滚 = 拉伸放大（范围缩小），向下滚 = 压缩缩小；deltaMode=1 为行模式需换算成像素
       const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY
       const factor = dy < 0 ? 0.85 : 1.15
       const newMin = anchorPrice + (bottom - anchorPrice) * factor
       const newMax = anchorPrice + (top - anchorPrice) * factor
       if (!isFinite(newMin) || !isFinite(newMax) || newMax <= newMin) return
+      // 缩放极限保护：最小不小于当前区间的 2%，最大不超过 50 倍
+      const curRange = top - bottom
+      if (newMax - newMin < curRange * 0.02 || newMax - newMin > curRange * 50) return
       manualPriceRangeRef.current = { min: newMin, max: newMax }
       triggerAutoscaleRecalc()
     }
