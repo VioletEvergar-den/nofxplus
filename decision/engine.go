@@ -466,8 +466,10 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 		}
 
 		// Liquidity filter
+		// 注意：OI 数据源失效或缺失（Latest<=0）时放行，避免把所有候选币误杀导致行情全空
+		// （仅当 OI 数据真实存在且明确低于阈值时才过滤）
 		isExistingPosition := positionSymbols[coin.Symbol]
-		if !isExistingPosition && data.OpenInterest != nil && data.CurrentPrice > 0 {
+		if !isExistingPosition && data.OpenInterest != nil && data.OpenInterest.Latest > 0 && data.CurrentPrice > 0 {
 			oiValue := data.OpenInterest.Latest * data.CurrentPrice
 			oiValueInMillions := oiValue / 1_000_000
 			if oiValueInMillions < minOIThresholdMillions {
