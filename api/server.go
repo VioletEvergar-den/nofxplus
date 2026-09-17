@@ -2480,7 +2480,7 @@ func (s *Server) handleStatus(c *gin.Context) {
 
 // handleAccount Account information
 func (s *Server) handleAccount(c *gin.Context) {
-	userID, traderID, err := s.getTraderFromQuery(c)
+	_, traderID, err := s.getTraderFromQuery(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -2503,7 +2503,7 @@ func (s *Server) handleAccount(c *gin.Context) {
 	}
 
 	// 本地模拟盘标记（前端据此显示模拟标识）
-	if fullCfg, cfgErr := s.store.Trader().GetFullConfig(userID, traderID); cfgErr == nil && fullCfg != nil && fullCfg.Trader.PaperTrading {
+	if fullCfg, cfgErr := s.store.Trader().GetFullConfig(c.GetString("user_id"), traderID); cfgErr == nil && fullCfg != nil && fullCfg.Trader.PaperTrading {
 		account["account_source"] = "paper"
 	}
 
