@@ -86,6 +86,7 @@ type AutoTraderConfig struct {
 
 	// Account configuration
 	InitialBalance float64 // Initial balance (for P&L calculation, must be set manually)
+	PaperTrading   bool    // 本地模拟盘模式：不连接真实交易所，用币安真实行情本地撮合
 
 	// Risk control (only as hints, AI can make autonomous decisions)
 	MaxDailyLoss    float64       // Maximum daily loss percentage (hint)
@@ -286,33 +287,39 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 	}
 	logger.Infof("📊 [%s] Position mode: %s", config.Name, marginModeStr)
 
-	switch config.Exchange {
-	case "binance":
-		logger.Infof("🏦 [%s] Using Binance Futures trading (testnet: %v)", config.Name, config.BinanceTestnet)
-		trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey, userID, config.BinanceTestnet)
-	case "bybit":
-		logger.Infof("🏦 [%s] Using Bybit Futures trading (testnet: %v)", config.Name, config.BybitTestnet)
-		trader = NewBybitTrader(config.BybitAPIKey, config.BybitSecretKey)
-	case "okx":
-		logger.Infof("🏦 [%s] Using OKX Futures trading", config.Name)
-		trader = NewOKXTrader(config.OKXAPIKey, config.OKXSecretKey, config.OKXPassphrase)
-	case "bitget":
-		logger.Infof("🏦 [%s] Using Bitget Futures trading", config.Name)
-		trader = NewBitgetTrader(config.BitgetAPIKey, config.BitgetSecretKey, config.BitgetPassphrase)
-	case "hyperliquid":
-		logger.Infof("🏦 [%s] Using Hyperliquid trading", config.Name)
-		trader, err = NewHyperliquidTrader(config.HyperliquidPrivateKey, config.HyperliquidWalletAddr, config.HyperliquidTestnet)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize Hyperliquid trader: %w", err)
+	// 本地模拟盘：优先创建 PaperTrader，不连接真实交易所
+	if config.PaperTrading {
+		logger.Infof("🎮 [%s] Using local paper trading engine (initial balance: %.2f USDT)", config.Name, config.InitialBalance)
+		trader = NewPaperTrader(st, config.ID, userID, config.ExchangeID)
+	} else {
+		switch config.Exchange {
+		case "binance":
+			logger.Infof("🏦 [%s] Using Binance Futures trading (testnet: %v)", config.Name, config.BinanceTestnet)
+			trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey, userID, config.BinanceTestnet)
+		case "bybit":
+			logger.Infof("🏦 [%s] Using Bybit Futures trading (testnet: %v)", config.Name, config.BybitTestnet)
+			trader = NewBybitTrader(config.BybitAPIKey, config.BybitSecretKey)
+		case "okx":
+			logger.Infof("🏦 [%s] Using OKX Futures trading", config.Name)
+			trader = NewOKXTrader(config.OKXAPIKey, config.OKXSecretKey, config.OKXPassphrase)
+		case "bitget":
+			logger.Infof("🏦 [%s] Using Bitget Futures trading", config.Name)
+			trader = NewBitgetTrader(config.BitgetAPIKey, config.BitgetSecretKey, config.BitgetPassphrase)
+		case "hyperliquid":
+			logger.Infof("🏦 [%s] Using Hyperliquid trading", config.Name)
+			trader, err = NewHyperliquidTrader(config.HyperliquidPrivateKey, config.HyperliquidWalletAddr, config.HyperliquidTestnet)
+			if err != nil {
+				return nil, fmt.Errorf("failed to initialize Hyperliquid trader: %w", err)
+			}
+		case "aster":
+			logger.Infof("🏦 [%s] Using Aster trading", config.Name)
+			trader, err = NewAsterTrader(config.AsterUser, config.AsterSigner, config.AsterPrivateKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to initialize Aster trader: %w", err)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported trading platform: %s", config.Exchange)
 		}
-	case "aster":
-		logger.Infof("🏦 [%s] Using Aster trading", config.Name)
-		trader, err = NewAsterTrader(config.AsterUser, config.AsterSigner, config.AsterPrivateKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize Aster trader: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported trading platform: %s", config.Exchange)
 	}
 
 	// Validate initial balance configuration, auto-fetch from exchange if 0
@@ -2940,6 +2947,11 @@ func (at *AutoTrader) ClearPeakPnLCache(symbol, side string) {
 // entryPrice: entry price when closing (0 when opening)
 func (at *AutoTrader) recordAndConfirmOrder(orderResult map[string]interface{}, symbol, action string, quantity float64, price float64, leverage int) {
 	if at.store == nil {
+		return
+	}
+
+	// 本地模拟盘：PaperTrader 引擎已全权负责订单/成交/持仓落库，这里跳过避免双写
+	if at.config.PaperTrading {
 		return
 	}
 

@@ -30,6 +30,7 @@ interface FormState {
   trader_name: string
   ai_model: string
   exchange_id: string
+  paper_trading: boolean
   strategy_id: string
   trading_mode: string
   is_cross_margin: boolean
@@ -68,6 +69,7 @@ export function TraderConfigModal({
     trader_name: '',
     ai_model: '',
     exchange_id: '',
+    paper_trading: false,
     strategy_id: '',
     trading_mode: '',
     is_cross_margin: true,
@@ -113,6 +115,7 @@ export function TraderConfigModal({
     if (traderData) {
       setFormData({
         ...traderData,
+        paper_trading: (traderData as any).paper_trading ?? false,
         strategy_id: traderData.strategy_id || '',
         trading_mode: traderData.trading_mode || '',
         enable_feedback: traderData.enable_feedback ?? true,
@@ -127,6 +130,7 @@ export function TraderConfigModal({
         trader_name: '',
         ai_model: availableModels[0]?.id || '',
         exchange_id: availableExchanges[0]?.id || '',
+        paper_trading: false,
         strategy_id: '',
         trading_mode: '',
         is_cross_margin: true,
@@ -188,6 +192,7 @@ export function TraderConfigModal({
         name: formData.trader_name,
         ai_model_id: formData.ai_model,
         exchange_id: formData.exchange_id,
+        paper_trading: formData.paper_trading,
         strategy_id: formData.strategy_id,
         trading_mode: formData.trading_mode || '',
         is_cross_margin: formData.is_cross_margin,
@@ -201,8 +206,10 @@ export function TraderConfigModal({
         giveback_hard_pct: formData.giveback_hard_pct,
       }
 
-      // 只在编辑模式时包含initial_balance
-      if (isEditMode && formData.initial_balance !== undefined) {
+      // 模拟盘创建时必须传初始资金；编辑模式时可手动更新初始余额
+      if (formData.paper_trading && !isEditMode) {
+        saveData.initial_balance = formData.initial_balance || 1000
+      } else if (isEditMode && formData.initial_balance !== undefined) {
         saveData.initial_balance = formData.initial_balance
       }
 
@@ -299,50 +306,98 @@ export function TraderConfigModal({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="text-sm text-[#EAECEF] block mb-2">
-                    交易所 <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.exchange_id}
-                    onChange={(e) =>
-                      handleInputChange('exchange_id', e.target.value)
-                    }
-                    className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
-                  >
-                    {availableExchanges.map((exchange) => (
-                      <option key={exchange.id} value={exchange.id}>
-                        {getShortName(exchange.name || exchange.exchange_type || exchange.id).toUpperCase()}
-                        {exchange.account_name ? ` - ${exchange.account_name}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {/* Exchange Registration Link */}
-                  {formData.exchange_id && (() => {
-                    // Find the selected exchange to get its type
-                    const selectedExchange = availableExchanges.find(e => e.id === formData.exchange_id)
-                    const exchangeType = selectedExchange?.exchange_type?.toLowerCase() || ''
-                    const regLink = EXCHANGE_REGISTRATION_LINKS[exchangeType]
-                    if (!regLink) return null
-                    return (
-                      <a
-                        href={regLink.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1.5 text-xs text-[#848E9C] hover:text-[#F0B90B] transition-colors"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>还没有交易所账号？点击注册</span>
-                        {regLink.hasReferral && (
-                          <span className="px-1.5 py-0.5 bg-[#F0B90B]/10 text-[#F0B90B] rounded text-[10px]">
-                            折扣优惠
-                          </span>
-                        )}
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )
-                  })()}
-                </div>
+                {/* 模拟盘模式开关（仅创建模式，创建后不可更改） */}
+                {!isEditMode && (
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer mb-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.paper_trading}
+                        onChange={(e) =>
+                          handleInputChange('paper_trading', e.target.checked)
+                        }
+                        className="accent-[#F0B90B]"
+                      />
+                      <span className="text-sm text-[#EAECEF]">
+                        🎮 本地模拟盘（不需要交易所账号，用币安真实行情模拟成交）
+                      </span>
+                    </label>
+                    <p className="text-xs text-[#848E9C] mb-3">
+                      {language === 'zh'
+                        ? '开启后 AI 交易员在本地模拟环境运行，资金为虚拟资金，可自定义初始金额'
+                        : 'When enabled, the AI trader runs in a local simulated environment with virtual funds'}
+                    </p>
+                  </div>
+                )}
+                {!formData.paper_trading && (
+                  <div>
+                    <label className="text-sm text-[#EAECEF] block mb-2">
+                      交易所{' '}
+                      {!formData.paper_trading && (
+                        <span className="text-red-500">*</span>
+                      )}
+                    </label>
+                    <select
+                      value={formData.exchange_id}
+                      onChange={(e) =>
+                        handleInputChange('exchange_id', e.target.value)
+                      }
+                      className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                    >
+                      {availableExchanges.map((exchange) => (
+                        <option key={exchange.id} value={exchange.id}>
+                          {getShortName(exchange.name || exchange.exchange_type || exchange.id).toUpperCase()}
+                          {exchange.account_name ? ` - ${exchange.account_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Exchange Registration Link */}
+                    {formData.exchange_id && (() => {
+                      // Find the selected exchange to get its type
+                      const selectedExchange = availableExchanges.find(e => e.id === formData.exchange_id)
+                      const exchangeType = selectedExchange?.exchange_type?.toLowerCase() || ''
+                      const regLink = EXCHANGE_REGISTRATION_LINKS[exchangeType]
+                      if (!regLink) return null
+                      return (
+                        <a
+                          href={regLink.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-flex items-center gap-1.5 text-xs text-[#848E9C] hover:text-[#F0B90B] transition-colors"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>还没有交易所账号？点击注册</span>
+                          {regLink.hasReferral && (
+                            <span className="px-1.5 py-0.5 bg-[#F0B90B]/10 text-[#F0B90B] rounded text-[10px]">
+                              折扣优惠
+                            </span>
+                          )}
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )
+                    })()}
+                  </div>
+                )}
+                {formData.paper_trading && (
+                  <div>
+                    <label className="text-sm text-[#EAECEF] block mb-2">
+                      初始资金 (USDT) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.initial_balance ?? 1000}
+                      onChange={(e) =>
+                        handleInputChange('initial_balance', Number(e.target.value))
+                      }
+                      className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                      min="1"
+                      step="0.01"
+                    />
+                    <p className="text-xs text-[#848E9C] mt-1">
+                      模拟账户的虚拟起始资金，支持任意金额（如 100 / 1000 / 10000）
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -682,16 +737,18 @@ export function TraderConfigModal({
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-sm text-[#EAECEF]">
-                      初始余额 ($)
+                      {formData.paper_trading ? '模拟初始资金 (USDT)' : '初始余额 ($)'}
                     </label>
-                    <button
-                      type="button"
-                      onClick={handleFetchCurrentBalance}
-                      disabled={isFetchingBalance}
-                      className="px-3 py-1 text-xs bg-[#F0B90B] text-black rounded hover:bg-[#E1A706] transition-colors disabled:bg-[#848E9C] disabled:cursor-not-allowed"
-                    >
-                      {isFetchingBalance ? '获取中...' : '获取当前余额'}
-                    </button>
+                    {!formData.paper_trading && (
+                      <button
+                        type="button"
+                        onClick={handleFetchCurrentBalance}
+                        disabled={isFetchingBalance}
+                        className="px-3 py-1 text-xs bg-[#F0B90B] text-black rounded hover:bg-[#E1A706] transition-colors disabled:bg-[#848E9C] disabled:cursor-not-allowed"
+                      >
+                        {isFetchingBalance ? '获取中...' : '获取当前余额'}
+                      </button>
+                    )}
                   </div>
                   <input
                     type="number"
@@ -702,17 +759,42 @@ export function TraderConfigModal({
                         Number(e.target.value)
                       )
                     }
-                    className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                    disabled={!!formData.paper_trading}
+                    className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none disabled:opacity-60"
                     min="100"
                     step="0.01"
                   />
                   <p className="text-xs text-[#848E9C] mt-1">
-                    用于手动更新初始余额基准（例如充值/提现后）
+                    {formData.paper_trading
+                      ? '模拟盘初始资金在创建时设定，编辑仅用于盈亏统计基准；如需重来请使用「重置模拟账户」'
+                      : '用于手动更新初始余额基准（例如充值/提现后）'}
                   </p>
                   {balanceFetchError && (
                     <p className="text-xs text-red-500 mt-1">
                       {balanceFetchError}
                     </p>
+                  )}
+                  {formData.paper_trading && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!traderData?.trader_id) return
+                        if (!window.confirm('确定重置模拟账户？将清空全部模拟持仓/订单记录并恢复初始资金')) return
+                        try {
+                          const { api } = await import('../lib/api')
+                          await toast.promise(api.resetPaperAccount(traderData.trader_id), {
+                            loading: '正在重置…',
+                            success: '模拟账户已重置',
+                            error: '重置失败',
+                          })
+                        } catch (e) {
+                          console.error('重置模拟账户失败:', e)
+                        }
+                      }}
+                      className="mt-2 w-full px-3 py-2 text-sm bg-transparent border border-red-500/60 text-red-400 rounded hover:bg-red-500/10 transition-colors"
+                    >
+                      🎮 重置模拟账户（清空记录并恢复初始资金）
+                    </button>
                   )}
                 </div>
               )}
@@ -759,7 +841,8 @@ export function TraderConfigModal({
                 isSaving ||
                 !formData.trader_name ||
                 !formData.ai_model ||
-                !formData.exchange_id
+                (!formData.exchange_id && !formData.paper_trading) ||
+                (formData.paper_trading && !isEditMode && !(formData.initial_balance && formData.initial_balance > 0))
               }
               className="px-8 py-3 bg-gradient-to-r from-[#F0B90B] to-[#E1A706] text-black rounded-lg hover:from-[#E1A706] hover:to-[#D4951E] transition-all duration-200 disabled:bg-[#848E9C] disabled:cursor-not-allowed font-medium shadow-lg"
             >

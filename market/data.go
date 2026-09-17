@@ -1092,6 +1092,11 @@ func getOpenInterestData(symbol string) (*OIData, error) {
 	}, nil
 }
 
+// GetFundingRate retrieves the latest funding rate for a symbol (exported wrapper with 1-hour cache)
+func GetFundingRate(symbol string) (float64, error) {
+	return getFundingRate(symbol)
+}
+
 // getFundingRate retrieves funding rate (optimized: uses 1-hour cache)
 func getFundingRate(symbol string) (float64, error) {
 	// Check cache (1-hour validity)

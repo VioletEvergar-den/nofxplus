@@ -133,6 +133,14 @@ export const api = {
     return result.data!
   },
 
+  // 重置模拟盘账户（清空余额与订单/成交/持仓记录，回到初始资金）
+  async resetPaperAccount(traderId: string): Promise<void> {
+    const result = await httpClient.post(
+      `${API_BASE}/traders/${traderId}/paper/reset`
+    )
+    if (!result.success) throw new Error('重置模拟账户失败')
+  },
+
   async updateTraderPrompt(
     traderId: string,
     customPrompt: string

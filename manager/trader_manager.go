@@ -489,18 +489,24 @@ func (tm *TraderManager) LoadUserTradersFromStore(st *store.Store, userID string
 			}
 		}
 
-		if exchangeCfg == nil {
+		// 本地模拟盘交易员不依赖真实交易所配置
+		if exchangeCfg == nil && !traderCfg.PaperTrading {
 			logger.Infof("⚠️ Exchange %s for trader %s does not exist, skipping", traderCfg.ExchangeID, traderCfg.Name)
 			continue
 		}
 
-		if !exchangeCfg.Enabled {
+		if exchangeCfg != nil && !exchangeCfg.Enabled && !traderCfg.PaperTrading {
 			logger.Infof("⚠️ Exchange %s for trader %s is not enabled, skipping", traderCfg.ExchangeID, traderCfg.Name)
 			continue
 		}
 
 		// Use existing method to load trader
-		logger.Infof("📦 Loading trader %s (AI Model: %s, Exchange: %s/%s, Strategy ID: %s)", traderCfg.Name, aiModelCfg.Provider, exchangeCfg.ExchangeType, exchangeCfg.AccountName, traderCfg.StrategyID)
+		logger.Infof("📦 Loading trader %s (AI Model: %s, Exchange: %s, Strategy ID: %s)", traderCfg.Name, aiModelCfg.Provider, func() string {
+			if exchangeCfg != nil {
+				return exchangeCfg.ExchangeType + "/" + exchangeCfg.AccountName
+			}
+			return "paper"
+		}(), traderCfg.StrategyID)
 		err = tm.addTraderFromStore(traderCfg, aiModelCfg, exchangeCfg, st)
 		if err != nil {
 			logger.Infof("❌ Failed to load trader %s: %v", traderCfg.Name, err)
@@ -595,12 +601,13 @@ func (tm *TraderManager) LoadTradersFromStore(st *store.Store) error {
 			}
 		}
 
-		if exchangeCfg == nil {
+		// 本地模拟盘交易员不依赖真实交易所配置
+		if exchangeCfg == nil && !traderCfg.PaperTrading {
 			logger.Infof("⚠️  Exchange %s for trader %s does not exist, skipping", traderCfg.ExchangeID, traderCfg.Name)
 			continue
 		}
 
-		if !exchangeCfg.Enabled {
+		if exchangeCfg != nil && !exchangeCfg.Enabled && !traderCfg.PaperTrading {
 			logger.Infof("⚠️  Exchange %s for trader %s is not enabled, skipping", traderCfg.ExchangeID, traderCfg.Name)
 			continue
 		}
@@ -621,6 +628,14 @@ func (tm *TraderManager) LoadTradersFromStore(st *store.Store) error {
 func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg *store.AIModel, exchangeCfg *store.Exchange, st *store.Store) error {
 	if _, exists := tm.traders[traderCfg.ID]; exists {
 		return fmt.Errorf("trader ID '%s' already exists", traderCfg.ID)
+	}
+
+	// 本地模拟盘：允许不绑定真实交易所，给占位配置避免下游解引用 nil
+	if exchangeCfg == nil {
+		if !traderCfg.PaperTrading {
+			return fmt.Errorf("trader %s has no exchange configured", traderCfg.Name)
+		}
+		exchangeCfg = &store.Exchange{ID: "", ExchangeType: "binance", Enabled: true, AccountName: "本地模拟盘"}
 	}
 
 	// Load strategy config (must have strategy)
@@ -647,10 +662,11 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		AIModel:               aiModelCfg.Provider,
 		Exchange:              exchangeCfg.ExchangeType, // Exchange type: binance/bybit/okx/etc
 		ExchangeID:            exchangeCfg.ID,           // Exchange account UUID (for multi-account)
+		PaperTrading:          traderCfg.PaperTrading,   // 本地模拟盘模式（不连接真实交易所）
 		BinanceAPIKey:         "",
 		BinanceSecretKey:      "",
 		HyperliquidPrivateKey: "",
-		HyperliquidTestnet:    traderCfg.PaperTrading || exchangeCfg.Testnet,
+		HyperliquidTestnet:    exchangeCfg.Testnet,
 		UseQwen:               aiModelCfg.Provider == "qwen",
 		DeepSeekKey:           "",
 		QwenKey:               "",
@@ -675,11 +691,11 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 	case "binance":
 		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
 		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
-		traderConfig.BinanceTestnet = traderCfg.PaperTrading || exchangeCfg.Testnet
+		traderConfig.BinanceTestnet = exchangeCfg.Testnet
 	case "bybit":
 		traderConfig.BybitAPIKey = exchangeCfg.APIKey
 		traderConfig.BybitSecretKey = exchangeCfg.SecretKey
-		traderConfig.BybitTestnet = traderCfg.PaperTrading || exchangeCfg.Testnet
+		traderConfig.BybitTestnet = exchangeCfg.Testnet
 	case "okx":
 		traderConfig.OKXAPIKey = exchangeCfg.APIKey
 		traderConfig.OKXSecretKey = exchangeCfg.SecretKey

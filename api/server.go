@@ -159,6 +159,7 @@ func (s *Server) setupRoutes() {
 			protected.GET("/traders/:id/analysis", s.handleGetTraderAnalysis)
 			protected.POST("/traders/:id/sync-balance", s.handleSyncBalance)
 			protected.POST("/traders/:id/close-position", s.handleClosePosition)
+			protected.POST("/traders/:id/paper/reset", s.handleResetPaperAccount)
 			protected.PUT("/traders/:id/competition", s.handleToggleCompetition)
 
 			// AI model configuration
@@ -453,7 +454,7 @@ func (s *Server) getTraderFromQuery(c *gin.Context) (*manager.TraderManager, str
 type CreateTraderRequest struct {
 	Name                  string  `json:"name" binding:"required"`
 	AIModelID             string  `json:"ai_model_id" binding:"required"`
-	ExchangeID            string  `json:"exchange_id" binding:"required"`
+	ExchangeID            string  `json:"exchange_id"` // Exchange account UUID（模拟盘可不填）
 	StrategyID            string  `json:"strategy_id"` // Strategy ID (new version)
 	InitialBalance        float64 `json:"initial_balance"`
 	ScanIntervalMinutes   int     `json:"scan_interval_minutes"`
@@ -599,6 +600,16 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		paperTrading = *req.PaperTrading
 	}
 
+	// 非模拟盘交易员必须绑定交易所账户
+	if !paperTrading && req.ExchangeID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exchange_id is required for live trading"})
+		return
+	}
+	if paperTrading && req.InitialBalance <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "initial_balance is required for paper trading"})
+		return
+	}
+
 	enableFeedback := true // Default to enable feedback
 	if req.EnableFeedback != nil {
 		enableFeedback = *req.EnableFeedback
@@ -652,7 +663,10 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		}
 	}
 
-	if exchangeCfg == nil {
+	if paperTrading {
+		// 本地模拟盘：跳过真实余额查询，直接使用用户输入的初始资金
+		logger.Infof("🎮 Paper trading trader: initial balance %.2f USDT (no exchange balance query)", actualBalance)
+	} else if exchangeCfg == nil {
 		logger.Infof("⚠️ Exchange %s configuration not found, using user input for initial balance", req.ExchangeID)
 	} else if !exchangeCfg.Enabled {
 		logger.Infof("⚠️ Exchange %s not enabled, using user input for initial balance", req.ExchangeID)
@@ -786,7 +800,7 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 type UpdateTraderRequest struct {
 	Name                  string  `json:"name" binding:"required"`
 	AIModelID             string  `json:"ai_model_id" binding:"required"`
-	ExchangeID            string  `json:"exchange_id" binding:"required"`
+	ExchangeID            string  `json:"exchange_id"` // Exchange account UUID（模拟盘可不填）
 	StrategyID            string  `json:"strategy_id"` // Strategy ID (new version)
 	InitialBalance        float64 `json:"initial_balance"`
 	ScanIntervalMinutes   int     `json:"scan_interval_minutes"`
@@ -942,6 +956,7 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		GivebackHardPct:       clampGivebackPct(req.GivebackHardPct),
 		ScanIntervalMinutes:   scanIntervalMinutes,
 		IsRunning:             existingTrader.IsRunning, // Keep original value
+		PaperTrading:          existingTrader.PaperTrading, // 模拟盘标志仅创建时可设，更新时保留原值
 	}
 
 	// Update database
@@ -1531,6 +1546,44 @@ func (s *Server) handleClosePosition(c *gin.Context) {
 		return
 	}
 
+	// 本地模拟盘：用 PaperTrader 执行平仓（不依赖真实交易所配置，引擎全权负责落库）
+	if fullConfig.Trader.PaperTrading {
+		paperTrader := trader.NewPaperTrader(s.store, traderID, userID, fullConfig.Trader.ExchangeID)
+
+		var result map[string]interface{}
+		var closeErr error
+
+		// 登记手动平仓原因，引擎平仓落库时写入持仓记录
+		trader.SetPendingCloseReason(traderID, req.Symbol, req.Side, "manual")
+
+		switch req.Side {
+		case "LONG":
+			result, closeErr = paperTrader.CloseLong(req.Symbol, 0) // 0 means close all
+		case "SHORT":
+			result, closeErr = paperTrader.CloseShort(req.Symbol, 0) // 0 means close all
+		default:
+			trader.DiscardPendingCloseReason(traderID, req.Symbol, req.Side)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "side must be LONG or SHORT"})
+			return
+		}
+
+		if closeErr != nil {
+			trader.DiscardPendingCloseReason(traderID, req.Symbol, req.Side)
+			logger.Infof("❌ [paper] Close position failed: symbol=%s, side=%s, error=%v", req.Symbol, req.Side, closeErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to close position: %v", closeErr)})
+			return
+		}
+
+		logger.Infof("✅ [paper] Position closed successfully: symbol=%s, side=%s, result=%v", req.Symbol, req.Side, result)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Position closed successfully",
+			"symbol":  req.Symbol,
+			"side":    req.Side,
+			"result":  result,
+		})
+		return
+	}
+
 	exchangeCfg := fullConfig.Exchange
 
 	if exchangeCfg == nil || !exchangeCfg.Enabled {
@@ -1644,6 +1697,44 @@ func (s *Server) handleClosePosition(c *gin.Context) {
 		"symbol":  req.Symbol,
 		"side":    req.Side,
 		"result":  result,
+	})
+}
+
+// handleResetPaperAccount 重置模拟盘账户（清空账户余额与订单/成交/持仓记录，回到初始资金）
+func (s *Server) handleResetPaperAccount(c *gin.Context) {
+	userID := c.GetString("user_id")
+	traderID := c.Param("id")
+
+	traderCfg, err := s.store.Trader().GetFullConfig(userID, traderID)
+	if err != nil || traderCfg == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Trader does not exist"})
+		return
+	}
+	if !traderCfg.Trader.PaperTrading {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Not a paper trading account"})
+		return
+	}
+
+	// 运行中的模拟交易员先停止并移出内存（避免引擎持有旧挂单/账户状态继续写库）
+	if t, getErr := s.traderManager.GetTrader(traderID); getErr == nil && t != nil {
+		t.Stop()
+		s.traderManager.RemoveTrader(traderID)
+	}
+	// 同步数据库状态为已停止
+	if err := s.store.Trader().UpdateStatus(userID, traderID, false); err != nil {
+		logger.Infof("⚠️ Failed to update trader status after paper reset: %v", err)
+	}
+
+	if err := s.store.PaperAccount().Reset(traderID); err != nil {
+		logger.Infof("❌ Failed to reset paper account %s: %v", traderID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to reset paper account: %v", err)})
+		return
+	}
+
+	logger.Infof("✅ Paper account reset: trader=%s (user=%s)", traderID, userID)
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Paper account reset successfully",
+		"trader_id": traderID,
 	})
 }
 
@@ -2298,6 +2389,7 @@ func (s *Server) handleTraderList(c *gin.Context) {
 			"is_running":           isRunning,
 			"show_in_competition":  trader.ShowInCompetition,
 			"initial_balance":      trader.InitialBalance,
+			"paper_trading":        trader.PaperTrading,
 			"strategy_id":          trader.StrategyID,
 			"strategy_name":        strategyName,
 			"strategy_coin_source": coinSource,
@@ -2343,6 +2435,7 @@ func (s *Server) handleGetTraderConfig(c *gin.Context) {
 		"exchange_id":             traderConfig.ExchangeID,
 		"strategy_id":             traderConfig.StrategyID,
 		"initial_balance":         traderConfig.InitialBalance,
+		"paper_trading":           traderConfig.PaperTrading,
 		"scan_interval_minutes":   traderConfig.ScanIntervalMinutes,
 		"btc_eth_leverage":        traderConfig.BTCETHLeverage,
 		"altcoin_leverage":        traderConfig.AltcoinLeverage,
@@ -2387,7 +2480,7 @@ func (s *Server) handleStatus(c *gin.Context) {
 
 // handleAccount Account information
 func (s *Server) handleAccount(c *gin.Context) {
-	_, traderID, err := s.getTraderFromQuery(c)
+	userID, traderID, err := s.getTraderFromQuery(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -2407,6 +2500,11 @@ func (s *Server) handleAccount(c *gin.Context) {
 			"error": fmt.Sprintf("Failed to get account info: %v", err),
 		})
 		return
+	}
+
+	// 本地模拟盘标记（前端据此显示模拟标识）
+	if fullCfg, cfgErr := s.store.Trader().GetFullConfig(userID, traderID); cfgErr == nil && fullCfg != nil && fullCfg.Trader.PaperTrading {
+		account["account_source"] = "paper"
 	}
 
 	logger.Infof("✓ Returning account info [%s]: equity=%.2f, available=%.2f, pnl=%.2f (%.2f%%)",

@@ -29,6 +29,7 @@ export interface AccountInfo {
   position_count: number
   margin_used: number
   margin_used_pct: number
+  account_source?: string // "paper" = 本地模拟盘账户
 }
 
 export interface Position {
@@ -102,6 +103,8 @@ export interface TraderInfo {
   exchange_id?: string
   is_running?: boolean
   show_in_competition?: boolean
+  paper_trading?: boolean
+  initial_balance?: number
   strategy_id?: string
   strategy_name?: string
   strategy_coin_source?: {
@@ -172,6 +175,7 @@ export interface CreateTraderRequest {
   name: string
   ai_model_id: string
   exchange_id: string
+  paper_trading?: boolean // 本地模拟盘模式（不连接真实交易所，初始资金自定义）
   strategy_id?: string // 策略ID（新版，使用保存的策略配置）
   initial_balance?: number // 可选：创建时由后端自动获取，编辑时可手动更新
   scan_interval_minutes?: number

@@ -27,6 +27,7 @@ type Store struct {
 	equity       *EquityStore
 	order        *OrderStore
 	tradeOutcome *TradeOutcomeStore
+	paperAccount *PaperAccountStore
 
 	// Encryption functions
 	encryptFunc func(string) string
@@ -160,6 +161,9 @@ func (s *Store) initTables() error {
 	}
 	if err := s.TradeOutcome().InitTables(); err != nil {
 		return fmt.Errorf("failed to initialize trade outcome tables: %w", err)
+	}
+	if err := s.PaperAccount().initTables(); err != nil {
+		return fmt.Errorf("failed to initialize paper account tables: %w", err)
 	}
 	return nil
 }
@@ -303,6 +307,16 @@ func (s *Store) TradeOutcome() *TradeOutcomeStore {
 		s.tradeOutcome = NewTradeOutcomeStore(s.db)
 	}
 	return s.tradeOutcome
+}
+
+// PaperAccount gets paper trading account storage
+func (s *Store) PaperAccount() *PaperAccountStore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.paperAccount == nil {
+		s.paperAccount = NewPaperAccountStore(s.db)
+	}
+	return s.paperAccount
 }
 
 // Close closes database connection

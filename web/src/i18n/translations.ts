@@ -24,6 +24,7 @@ export const translations = {
     strategyNav: 'Strategy',
     debateNav: 'Debate Arena',
     faqNav: 'FAQ',
+    paperNav: 'Paper Trading',
 
     // Footer
     footerTitle: 'NOFX - AI Trading System',
@@ -1329,6 +1330,7 @@ export const translations = {
     strategyNav: '策略',
     debateNav: '行情辩论',
     faqNav: '常见问题',
+    paperNav: '模拟盘',
 
     // Footer
     footerTitle: 'NOFX - AI交易系统',

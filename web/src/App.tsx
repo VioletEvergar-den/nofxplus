@@ -11,6 +11,7 @@ import { LandingPage } from './pages/LandingPage'
 import { FAQPage } from './pages/FAQPage'
 import { StrategyStudioPage } from './pages/StrategyStudioPage'
 import { DebateArenaPage } from './pages/DebateArenaPage'
+import { PaperTradingPage } from './components/PaperTradingPage'
 import HeaderBar from './components/HeaderBar'
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -41,6 +42,7 @@ type Page =
   | 'backtest'
   | 'strategy'
   | 'debate'
+  | 'paper'
   | 'faq'
   | 'login'
   | 'register'
@@ -135,6 +137,7 @@ function App() {
     if (path === '/backtest' || hash === 'backtest') return 'backtest'
     if (path === '/strategy' || hash === 'strategy') return 'strategy'
     if (path === '/debate' || hash === 'debate') return 'debate'
+    if (path === '/paper' || hash === 'paper') return 'paper'
     if (path === '/dashboard' || hash === 'trader' || hash === 'details')
       return 'trader'
     return 'competition' // 默认为竞赛页面
@@ -188,6 +191,8 @@ function App() {
         setCurrentPage('strategy')
       } else if (path === '/debate' || hash === 'debate') {
         setCurrentPage('debate')
+      } else if (path === '/paper' || hash === 'paper') {
+        setCurrentPage('paper')
       } else if (
         path === '/dashboard' ||
         hash === 'trader' ||
@@ -422,6 +427,10 @@ function App() {
               window.history.pushState({}, '', '/debate')
               setRoute('/debate')
               setCurrentPage('debate')
+            } else if (page === 'paper') {
+              window.history.pushState({}, '', '/paper')
+              setRoute('/paper')
+              setCurrentPage('paper')
             }
           }}
         />
@@ -483,6 +492,11 @@ function App() {
               window.history.pushState({}, '', '/debate')
               setRoute('/debate')
               setCurrentPage('debate')
+            } else if (page === 'paper') {
+              console.log('Navigating to paper')
+              window.history.pushState({}, '', '/paper')
+              setRoute('/paper')
+              setCurrentPage('paper')
             }
 
             console.log(
@@ -587,6 +601,10 @@ function App() {
             window.history.pushState({}, '', '/debate')
             setRoute('/debate')
             setCurrentPage('debate')
+          } else if (page === 'paper') {
+            window.history.pushState({}, '', '/paper')
+            setRoute('/paper')
+            setCurrentPage('paper')
           }
         }}
       />
@@ -594,8 +612,8 @@ function App() {
       {/* Main Content */}
       <main
         className={
-          currentPage === 'debate'
-            ? 'h-[calc(100vh-64px)] mt-16'
+          currentPage === 'debate' || currentPage === 'paper'
+            ? 'h-[calc(100vh-64px)] mt-16 overflow-hidden'
             : 'max-w-[1920px] mx-auto px-6 py-6 pt-24'
         }
       >
@@ -616,6 +634,8 @@ function App() {
           <StrategyStudioPage />
         ) : currentPage === 'debate' ? (
           <DebateArenaPage />
+        ) : currentPage === 'paper' ? (
+          <PaperTradingPage />
         ) : (
           <TraderDetailsPage
             selectedTrader={selectedTrader}
@@ -653,8 +673,8 @@ function App() {
         )}
       </main>
 
-      {/* Footer - Hidden on debate page */}
-      {currentPage !== 'debate' && (
+      {/* Footer - Hidden on debate/paper page */}
+      {currentPage !== 'debate' && currentPage !== 'paper' && (
         <footer
           className="mt-16"
           style={{ borderTop: '1px solid #2B3139', background: '#181A20' }}
