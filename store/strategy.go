@@ -1211,12 +1211,12 @@ func GetDefaultStrategyConfig(lang string) StrategyConfig {
 			MACDFastPeriod:     12, // default MACD fast period
 			MACDSlowPeriod:     26, // default MACD slow period
 			BOLLPeriods:        []int{20},
-			EnableQuantData:    true,
+			EnableQuantData:    false, // 量化数据 API 已失效，默认关闭
 			QuantDataAPIURL:    config.GetDefaultQuantDataAPIURL(),
 			EnableQuantOI:      true,
 			EnableQuantNetflow: true,
 			// OI ranking data - market-wide OI increase/decrease rankings
-			EnableOIRanking:   true,
+			EnableOIRanking:   false, // OI 排名外部 API 已失效（402），默认关闭
 			OIRankingAPIURL:   config.GetDefaultOIRankingBaseURL(),
 			OIRankingDuration: "1h",
 			OIRankingLimit:    10,

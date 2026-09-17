@@ -162,7 +162,8 @@ payload 字段：
   - risk_control: {"max_positions": n(1~10), "btc_eth_max_leverage": n(1~20，建议≤10), "altcoin_max_leverage": n(1~20，建议≤5), "btc_eth_max_position_value_ratio": f(0.1~20), "altcoin_max_position_value_ratio": f(0.1~20), "max_margin_usage": f(0.1~1.0，建议≤0.9), "min_position_size": f(建议12), "min_risk_reward_ratio": f(建议3), "min_confidence": n(50~99，建议75)}
 - scan_interval_minutes: 扫描周期建议（分钟，1~1440）：scalp→1~3, intraday→5~15, swing→15~60, position→60~240
 - reasoning: 终审总结（做了哪些裁决、为什么）
-- 裁决原则：安全性优先于收益性；交易员的 no_trade_conditions 除非有强理由否则采纳`
+- 裁决原则：安全性优先于收益性；交易员的 no_trade_conditions 除非有强理由否则采纳
+- final_config 必须逐 section 完整输出（trading_mode / coin_source / klines / indicators / risk_control 全部都要），取值基于架构师 payload 与圆桌裁决逐项裁定（币种清单以圆桌最终确认的为准、周期组合与K线数量必须体现 multi_tf_views 的结论、指标选配与参数按持仓周期定制、仓位限制按资金规模校验），禁止省略 section、禁止照抄默认模板`
 	case "prompt_writer":
 		return base + `
 ## 你的任务（首席策略撰写官）
@@ -814,7 +815,9 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 	}
 
 	// ---------- 第 2 轮：策略架构师 ----------
-	if _, err := s.runAgentTurn(st, modelID, "strategy_architect", "请先点名点评交易员的计划（哪些采纳哪些有保留），再给出完整参数配置。交易对完全由你们决定：默认模板的 BTC/ETH 只是起点，可用 list_coins 查询主流与热门币后自由增删 static_coins（须通过可开仓校验）；并含 1w/1d/4h 逐周期趋势判断、K线与指标。"); err != nil {
+	var architectPayload map[string]any
+	envArchitect, err := s.runAgentTurn(st, modelID, "strategy_architect", "请先点名点评交易员的计划（哪些采纳哪些有保留），再给出完整参数配置。交易对完全由你们决定：默认模板的 BTC/ETH 只是起点，可用 list_coins 查询主流与热门币后自由增删 static_coins（须通过可开仓校验）；并含 1w/1d/4h 逐周期趋势判断、K线周期组合与数量、技术指标选配与参数。")
+	if err != nil {
 		if err.Error() == "cancelled" {
 			st.setStatus("cancelled", "")
 			return
@@ -823,6 +826,8 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 			st.setStatus("failed", "策略架构师失败: "+err.Error())
 			return
 		}
+	} else {
+		architectPayload = envArchitect.Payload
 	}
 	if st.cancelFlag.Load() {
 		st.setStatus("cancelled", "")
@@ -854,6 +859,11 @@ func (s *Server) runCouncilAgent(st *councilState, modelID string, base *store.S
 			return
 		}
 		candidate := *base
+		// 先合并架构师参数作兜底（周期组合/K线数量/指标选配/币种），再用风控官终稿覆盖——
+		// 风控官漏写某 section 时不会静默回退到默认模板，保证圆桌讨论结果与策略一一对应
+		if architectPayload != nil {
+			mergeCouncilConfig(&candidate, architectPayload, &clampWarnings)
+		}
 		mergeCouncilConfig(&candidate, envReviewer.Payload, &clampWarnings)
 		if si, ok := clampInt(envReviewer.Payload, "scan_interval_minutes", 1, 1440, &clampWarnings, "扫描周期建议"); ok {
 			scanIntervalSuggestion = si

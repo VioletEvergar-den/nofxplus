@@ -38,17 +38,17 @@ const (
 
 // councilStep 单个角色的执行状态（用于前端过程展示）
 type councilStep struct {
-	Role        string   `json:"role"`
-	Emoji       string   `json:"emoji"`
-	Status      string   `json:"status"`
-	Summary     string   `json:"summary,omitempty"`
-	Concerns    []string `json:"concerns,omitempty"`
-	Payload     any      `json:"payload,omitempty"`
-	Sources     []string `json:"sources,omitempty"`
-	Activity    []string `json:"activity,omitempty"` // Agent 动作流水（工具调用/追问/发言）
-	Error       string   `json:"error,omitempty"`
-	DurationMs  int64    `json:"duration_ms"`
-	Round       int      `json:"round"` // 1研判 2制定 3定稿
+	Role       string   `json:"role"`
+	Emoji      string   `json:"emoji"`
+	Status     string   `json:"status"`
+	Summary    string   `json:"summary,omitempty"`
+	Concerns   []string `json:"concerns,omitempty"`
+	Payload    any      `json:"payload,omitempty"`
+	Sources    []string `json:"sources,omitempty"`
+	Activity   []string `json:"activity,omitempty"` // Agent 动作流水（工具调用/追问/发言）
+	Error      string   `json:"error,omitempty"`
+	DurationMs int64    `json:"duration_ms"`
+	Round      int      `json:"round"` // 1研判 2制定 3定稿
 }
 
 // councilTranscriptEntry 圆桌对话流条目（Agent 间的消息传递记录）
@@ -65,8 +65,8 @@ type councilTranscriptEntry struct {
 // councilFinalResult 会诊最终结果
 type councilFinalResult struct {
 	Config                 *store.StrategyConfig `json:"config"`
-	StrategyName           string                `json:"strategy_name,omitempty"`           // 撰写官为策略取的名字
-	StrategyDescription    string                `json:"strategy_description,omitempty"`    // 一句话简介
+	StrategyName           string                `json:"strategy_name,omitempty"`        // 撰写官为策略取的名字
+	StrategyDescription    string                `json:"strategy_description,omitempty"` // 一句话简介
 	ScanIntervalSuggestion int                   `json:"scan_interval_suggestion"`
 	Reasoning              string                `json:"reasoning"`
 	ClampWarnings          []string              `json:"clamp_warnings"`
@@ -75,23 +75,23 @@ type councilFinalResult struct {
 
 // councilState 一次会诊的完整状态
 type councilState struct {
-	ID         string              `json:"id"`
-	UserID     string              `json:"user_id"`
-	Status     string              `json:"status"` // running|completed|failed|cancelled
-	Mode       string              `json:"mode"`   // generate|modify
-	Intent     string              `json:"intent"`
-	Language   string              `json:"language"`
-	SearchOn   bool                `json:"search_on"`
-	Capital    float64             `json:"capital,omitempty"` // 用户本金（USDT），用于可开仓校验
-	PromptStyle string             `json:"prompt_style,omitempty"` // 提示词风格：auto|concise|balanced|detailed
-	Budget     int                 `json:"budget"`      // Agent 全场调用总预算（用户可设）
-	UsedBudget int32               `json:"used_budget"` // 已消耗调用次数（atomic）
-	Steps      []*councilStep      `json:"steps"`
-	Transcript []councilTranscriptEntry `json:"transcript,omitempty"` // 圆桌对话流
-	Result     *councilFinalResult `json:"result,omitempty"`
-	Error      string              `json:"error,omitempty"`
-	CreatedAt  time.Time           `json:"created_at"`
-	cancelFlag atomic.Bool         `json:"-"`
+	ID          string                   `json:"id"`
+	UserID      string                   `json:"user_id"`
+	Status      string                   `json:"status"` // running|completed|failed|cancelled
+	Mode        string                   `json:"mode"`   // generate|modify
+	Intent      string                   `json:"intent"`
+	Language    string                   `json:"language"`
+	SearchOn    bool                     `json:"search_on"`
+	Capital     float64                  `json:"capital,omitempty"`      // 用户本金（USDT），用于可开仓校验
+	PromptStyle string                   `json:"prompt_style,omitempty"` // 提示词风格：auto|concise|balanced|detailed
+	Budget      int                      `json:"budget"`                 // Agent 全场调用总预算（用户可设）
+	UsedBudget  int32                    `json:"used_budget"`            // 已消耗调用次数（atomic）
+	Steps       []*councilStep           `json:"steps"`
+	Transcript  []councilTranscriptEntry `json:"transcript,omitempty"` // 圆桌对话流
+	Result      *councilFinalResult      `json:"result,omitempty"`
+	Error       string                   `json:"error,omitempty"`
+	CreatedAt   time.Time                `json:"created_at"`
+	cancelFlag  atomic.Bool              `json:"-"`
 
 	// mu 保护 Steps/Status/Result/Error 的并发读写（runCouncil goroutine 写，GET handler 读）
 	mu sync.RWMutex `json:"-"`
@@ -480,7 +480,6 @@ func extractWriterSections(payload map[string]any, style string) (map[string]str
 	}, nil
 }
 
-
 var validTimeframes = map[string]bool{
 	"1m": true, "3m": true, "5m": true, "15m": true,
 	"30m": true, "1h": true, "4h": true, "1d": true,
@@ -683,6 +682,14 @@ func mergeCouncilConfig(base *store.StrategyConfig, payload map[string]any, warn
 			}
 			if len(cleaned) > 0 {
 				base.CoinSource.StaticCoins = cleaned
+				// 专家明确给出币种清单时，来源类型必须与之对应（coinpool/oi_top 池不使用 static_coins）
+				if base.CoinSource.SourceType == "coinpool" || base.CoinSource.SourceType == "oi_top" {
+					oldSrc := base.CoinSource.SourceType
+					base.CoinSource.SourceType = "static"
+					base.CoinSource.UseCoinPool = false
+					base.CoinSource.UseOITop = false
+					*warnings = append(*warnings, "AI 提供了固定币种清单，来源类型已从 "+oldSrc+" 切换为 static")
+				}
 			} else {
 				*warnings = append(*warnings, "AI 未提供有效的固定币种列表，保留原值")
 			}
@@ -1268,14 +1275,14 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 	}
 
 	var req struct {
-		Intent       string               `json:"intent" binding:"required"`
-		ModelID      string               `json:"model_id" binding:"required"`
-		Language     string               `json:"language"`
-		Mode         string               `json:"mode"`        // generate|modify
-		Config       *store.StrategyConfig `json:"config"`
-		AgentBudget  int                  `json:"agent_budget"` // Agent 全场调用总预算（5~200，默认12）
-		Capital      float64              `json:"capital"`      // 用户本金（USDT，选填），用于可开仓校验
-		PromptStyle  string               `json:"prompt_style"` // 提示词风格：auto|concise|balanced|detailed（默认auto）
+		Intent      string                `json:"intent" binding:"required"`
+		ModelID     string                `json:"model_id" binding:"required"`
+		Language    string                `json:"language"`
+		Mode        string                `json:"mode"` // generate|modify
+		Config      *store.StrategyConfig `json:"config"`
+		AgentBudget int                   `json:"agent_budget"` // Agent 全场调用总预算（5~200，默认12）
+		Capital     float64               `json:"capital"`      // 用户本金（USDT，选填），用于可开仓校验
+		PromptStyle string                `json:"prompt_style"` // 提示词风格：auto|concise|balanced|detailed（默认auto）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
@@ -1334,19 +1341,19 @@ func (s *Server) handleStartStrategyAICouncil(c *gin.Context) {
 		budget = 200
 	}
 	st := &councilState{
-		ID:        id,
-		UserID:    userID,
-		Status:    "running",
-		Mode:      req.Mode,
-		Intent:    req.Intent,
-		Language:  req.Language,
-		SearchOn:  getSearxngURL() != "",
-		Capital:   req.Capital,
+		ID:          id,
+		UserID:      userID,
+		Status:      "running",
+		Mode:        req.Mode,
+		Intent:      req.Intent,
+		Language:    req.Language,
+		SearchOn:    getSearxngURL() != "",
+		Capital:     req.Capital,
 		PromptStyle: req.PromptStyle,
-		Budget:    budget,
-		Steps:     make([]*councilStep, 0, len(councilRoles)),
-		Transcript: make([]councilTranscriptEntry, 0),
-		CreatedAt: time.Now(),
+		Budget:      budget,
+		Steps:       make([]*councilStep, 0, len(councilRoles)),
+		Transcript:  make([]councilTranscriptEntry, 0),
+		CreatedAt:   time.Now(),
 	}
 	for _, r := range councilRoles {
 		st.Steps = append(st.Steps, &councilStep{
