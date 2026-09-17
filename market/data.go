@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -94,59 +95,49 @@ func getKlinesFromBinance(symbol, interval string, limit int) ([]Kline, error) {
 	return klines, nil
 }
 
-// getKlinesFromHyperliquid fetches kline data from Hyperliquid API (crypto perps)
-func getKlinesFromHyperliquid(symbol, interval string, limit int) ([]Kline, error) {
-	// Map interval to Hyperliquid format
-	hlInterval := hyperliquid.MapTimeframe(interval)
+// ============================================================================
+// 币安限流熔断器：418/403 ban 期间暂停直连币安，全部走 CoinAnk 兜底
+// 避免被 ban 后继续高频请求导致 ban 延长、行情持续失败
+// ============================================================================
 
-	// Create Hyperliquid client
-	client := hyperliquid.NewClient()
+var binanceBannedUntil atomic.Int64 // 熔断解除时间（unix 毫秒）
 
-	// Fetch candles
-	ctx := context.Background()
-	candles, err := client.GetCandles(ctx, symbol, hlInterval, limit)
-	if err != nil {
-		return nil, fmt.Errorf("hyperliquid API error: %w", err)
+const binanceBanBackoff = 5 * time.Minute
+
+// noteBinanceBan 识别币安限流类错误并进入熔断退避期
+func noteBinanceBan(err error) {
+	if err == nil {
+		return
 	}
-
-	// Convert to market.Kline format
-	klines := make([]Kline, len(candles))
-	for i, c := range candles {
-		open, _ := strconv.ParseFloat(c.Open, 64)
-		high, _ := strconv.ParseFloat(c.High, 64)
-		low, _ := strconv.ParseFloat(c.Low, 64)
-		closePrice, _ := strconv.ParseFloat(c.Close, 64)
-		volume, _ := strconv.ParseFloat(c.Volume, 64)
-
-		klines[i] = Kline{
-			OpenTime:  c.OpenTime,
-			Open:      open,
-			High:      high,
-			Low:       low,
-			Close:     closePrice,
-			Volume:    volume,
-			CloseTime: c.CloseTime,
-		}
+	msg := err.Error()
+	if strings.Contains(msg, "418") || strings.Contains(msg, "403") || strings.Contains(msg, "banned") {
+		binanceBannedUntil.Store(time.Now().Add(binanceBanBackoff).UnixMilli())
+		logger.Warnf("🚫 Binance rate-limit ban detected, circuit-break binance requests for %v", binanceBanBackoff)
 	}
-
-	return klines, nil
 }
 
-// GetKlinesCoinank fetches kline data for crypto exchanges via CoinAnk (Binance default with multi-exchange support)
-// exchange: "binance", "bybit", "okx", "bitget", "aster"
-// interval: supports second/minute/hour/day/week/month intervals as provided by CoinAnk
-func GetKlinesCoinank(symbol, interval, exchange string, limit int) ([]Kline, error) {
-	// 币安请求优先直连币安官方 API（全精度）。
-	// CoinAnk 外部源对小价格币种存在致命精度丢失（如 DOGEUSDT 的 4h/1h/15m/5m 全序列
-	// 价格被抹平到三位小数），影响图表显示与 AI 决策数据质量，故调整优先级。
-	if strings.ToLower(exchange) == "binance" {
-		binanceKlines, binanceErr := getKlinesFromBinance(symbol, interval, limit)
-		if binanceErr == nil {
-			return binanceKlines, nil
-		}
-		logger.Warnf("⚠️ Binance native API failed for %s, falling back to CoinAnk: %v", symbol, binanceErr)
-	}
+// binanceCircuitOpen 熔断期内返回 true（暂停直连币安）
+func binanceCircuitOpen() bool {
+	return time.Now().UnixMilli() < binanceBannedUntil.Load()
+}
 
+// getKlinesWithFallback K线获取统一入口：币安优先（全精度）+ 限流熔断 + CoinAnk 兜底
+func getKlinesWithFallback(symbol, interval string, limit int) ([]Kline, error) {
+	if !binanceCircuitOpen() {
+		klines, err := getKlinesFromBinance(symbol, interval, limit)
+		if err == nil {
+			return klines, nil
+		}
+		noteBinanceBan(err)
+		logger.Warnf("⚠️ Binance failed for %s %s, falling back to CoinAnk: %v", symbol, interval, err)
+	} else {
+		logger.Infof("⏸️ Binance circuit-open (rate-limit backoff), using CoinAnk for %s %s", symbol, interval)
+	}
+	return getKlinesFromCoinankOnly(symbol, interval, "binance", limit)
+}
+
+// getKlinesFromCoinankOnly 仅通过 CoinAnk 获取K线（不做币安直连兜底，供熔断期使用）
+func getKlinesFromCoinankOnly(symbol, interval, exchange string, limit int) ([]Kline, error) {
 	// Map exchange string to coinank enum
 	var coinankExchange coinank_enum.Exchange
 	switch strings.ToLower(exchange) {
@@ -233,8 +224,8 @@ func GetKlinesCoinank(symbol, interval, exchange string, limit int) ([]Kline, er
 			if err != nil {
 				return nil, fmt.Errorf("coinank API error (fallback): %w", err)
 			}
-		} else if strings.ToLower(exchange) == "binance" {
-			// CoinAnk 服务异常时 Binance 官方 API 直连兜底，图表数据不再被外部服务拖死
+		} else if strings.ToLower(exchange) == "binance" && !binanceCircuitOpen() {
+			// CoinAnk 服务异常时 Binance 官方 API 直连兜底（熔断期内跳过，避免延长 ban）
 			logger.Warnf("⚠️ CoinAnk API failed for %s (binance), falling back to Binance native API: %v", symbol, err)
 			return getKlinesFromBinance(symbol, interval, limit)
 		} else {
@@ -258,6 +249,63 @@ func GetKlinesCoinank(symbol, interval, exchange string, limit int) ([]Kline, er
 	return klines, nil
 }
 
+// getKlinesFromHyperliquid fetches kline data from Hyperliquid API (crypto perps)
+func getKlinesFromHyperliquid(symbol, interval string, limit int) ([]Kline, error) {
+	// Map interval to Hyperliquid format
+	hlInterval := hyperliquid.MapTimeframe(interval)
+
+	// Create Hyperliquid client
+	client := hyperliquid.NewClient()
+
+	// Fetch candles
+	ctx := context.Background()
+	candles, err := client.GetCandles(ctx, symbol, hlInterval, limit)
+	if err != nil {
+		return nil, fmt.Errorf("hyperliquid API error: %w", err)
+	}
+
+	// Convert to market.Kline format
+	klines := make([]Kline, len(candles))
+	for i, c := range candles {
+		open, _ := strconv.ParseFloat(c.Open, 64)
+		high, _ := strconv.ParseFloat(c.High, 64)
+		low, _ := strconv.ParseFloat(c.Low, 64)
+		closePrice, _ := strconv.ParseFloat(c.Close, 64)
+		volume, _ := strconv.ParseFloat(c.Volume, 64)
+
+		klines[i] = Kline{
+			OpenTime:  c.OpenTime,
+			Open:      open,
+			High:      high,
+			Low:       low,
+			Close:     closePrice,
+			Volume:    volume,
+			CloseTime: c.CloseTime,
+		}
+	}
+
+	return klines, nil
+}
+
+// GetKlinesCoinank fetches kline data for crypto exchanges via CoinAnk (Binance default with multi-exchange support)
+// exchange: "binance", "bybit", "okx", "bitget", "aster"
+// interval: supports second/minute/hour/day/week/month intervals as provided by CoinAnk
+func GetKlinesCoinank(symbol, interval, exchange string, limit int) ([]Kline, error) {
+	// 币安请求优先直连币安官方 API（全精度）。
+	// CoinAnk 外部源对小价格币种存在致命精度丢失（如 DOGEUSDT 的 4h/1h/15m/5m 全序列
+	// 价格被抹平到三位小数），影响图表显示与 AI 决策数据质量，故调整优先级。
+	// 币安限流熔断期内跳过直连，直接走 CoinAnk，避免延长 ban。
+	if strings.ToLower(exchange) == "binance" && !binanceCircuitOpen() {
+		binanceKlines, binanceErr := getKlinesFromBinance(symbol, interval, limit)
+		if binanceErr == nil {
+			return binanceKlines, nil
+		}
+		noteBinanceBan(binanceErr)
+		logger.Warnf("⚠️ Binance native API failed for %s, falling back to CoinAnk: %v", symbol, binanceErr)
+	}
+	return getKlinesFromCoinankOnly(symbol, interval, exchange, limit)
+}
+
 // GetKlinesHyperliquid fetches kline data from Hyperliquid (crypto perps)
 func GetKlinesHyperliquid(symbol, interval string, limit int) ([]Kline, error) {
 	return getKlinesFromHyperliquid(symbol, interval, limit)
@@ -270,10 +318,10 @@ func Get(symbol string) (*Data, error) {
 	// Normalize symbol
 	symbol = Normalize(symbol)
 
-	// Get 3-minute K-line data
-	klines3m, err = getKlinesFromBinance(symbol, "3m", 100)
+	// Get 3-minute K-line data (with rate-limit circuit-breaker and CoinAnk fallback)
+	klines3m, err = getKlinesWithFallback(symbol, "3m", 100)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get 3-minute K-line from Binance: %v", err)
+		return nil, fmt.Errorf("failed to get 3-minute K-line: %v", err)
 	}
 
 	// Data staleness detection: Prevent DOGEUSDT-style price freeze issues
@@ -282,10 +330,10 @@ func Get(symbol string) (*Data, error) {
 		return nil, fmt.Errorf("%s data is stale, possible cache failure", symbol)
 	}
 
-	// Get 4-hour K-line data
-	klines4h, err = getKlinesFromBinance(symbol, "4h", 100)
+	// Get 4-hour K-line data (with rate-limit circuit-breaker and CoinAnk fallback)
+	klines4h, err = getKlinesWithFallback(symbol, "4h", 100)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get 4-hour K-line from Binance: %v", err)
+		return nil, fmt.Errorf("failed to get 4-hour K-line: %v", err)
 	}
 
 	// Check if data is empty
@@ -401,10 +449,10 @@ func GetWithTimeframes(symbol string, timeframes []string, primaryTimeframe stri
 		var klines []Kline
 		var err error
 
-		// Use Binance for crypto assets
-		klines, err = getKlinesFromBinance(symbol, tf, 200)
+		// Use Binance for crypto assets (with rate-limit circuit-breaker and CoinAnk fallback)
+		klines, err = getKlinesWithFallback(symbol, tf, 200)
 		if err != nil {
-			logger.Infof("⚠️ Failed to get %s %s K-line from Binance: %v", symbol, tf, err)
+			logger.Infof("⚠️ Failed to get %s %s K-line: %v", symbol, tf, err)
 			continue
 		}
 
