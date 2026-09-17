@@ -27,12 +27,13 @@ export interface ApiResponse<T = any> {
 export class HttpClient {
   private axiosInstance: AxiosInstance
   private static isHandling401 = false
+  private static lastNetworkToastAt = 0
 
   constructor() {
     // Create axios instance
     this.axiosInstance = axios.create({
       baseURL: import.meta.env.VITE_API_BASE || '/',
-      timeout: 30000,
+      timeout: 60000,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -87,9 +88,14 @@ export class HttpClient {
   private async handleError(error: AxiosError): Promise<any> {
     // Network error (no response from server)
     if (!error.response) {
-      toast.error('Network error - Please check your connection', {
-        description: 'Unable to reach the server',
-      })
+      // 15 秒内多个并发请求同时失败只弹一次，避免轮询请求失败时 toast 轰炸
+      const now = Date.now()
+      if (now - HttpClient.lastNetworkToastAt > 15000) {
+        HttpClient.lastNetworkToastAt = now
+        toast.error('Network error - Please check your connection', {
+          description: 'Unable to reach the server',
+        })
+      }
       throw new Error('Network error')
     }
 

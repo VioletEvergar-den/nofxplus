@@ -136,7 +136,7 @@ payload 字段：
 - trading_mode: "balanced"|"aggressive"|"conservative"|"scalping"
 - coin_source: {"source_type": "static"|"coinpool"|"oi_top"|"mixed", "static_coins": string[]（带USDT后缀，最多10个）, "coin_pool_limit": number(5~30), "oi_top_limit": number(5~50)}
   - 短线高频适合 coinpool/mixed，专注研究某几个币用 static
-- klines: {"primary_timeframe": "1m|3m|5m|15m|30m|1h|4h|1d", "primary_count": number(10~500，通常30~100), "enable_multi_timeframe": boolean, "selected_timeframes": string[](2~4个), "longer_timeframe": string, "longer_count": number}
+- klines: {"primary_timeframe": "1m|3m|5m|15m|30m|1h|4h|1d", "primary_count": number(10~60，通常30~60，数量越多上下文越贵，禁止贪多), "enable_multi_timeframe": boolean, "selected_timeframes": string[](2~4个), "longer_timeframe": string, "longer_count": number(10~100，通常30~60)}
 - indicators: {"enable_ema": bool, "ema_periods": number[](如[20,50]), "enable_rsi": bool, "rsi_periods": number[](如[7,14]), "enable_macd": bool, "macd_fast_period": number, "macd_slow_period": number, "enable_atr": bool, "atr_periods": number[](如[14]), "enable_boll": bool, "boll_periods": number[](如[20]), "enable_volume": bool, "enable_oi": bool, "enable_funding_rate": bool}
   - 短线必须有 EMA/RSI 类快指标；波段以上建议 MACD/BOLL；OI 与成交量建议常开
 - rationale: 1~2 句理由（需引用 multi_tf_views 结论与交易员计划）
@@ -157,7 +157,7 @@ payload 字段：
 - final_config: object（终稿，字段与枚举必须严格遵守）:
   - trading_mode: "balanced"|"aggressive"|"conservative"|"scalping"
   - coin_source: {"source_type": "static"|"coinpool"|"oi_top"|"mixed", "static_coins": string[], "coin_pool_limit": number, "oi_top_limit": number}
-  - klines: {"primary_timeframe": "1m|3m|5m|15m|30m|1h|4h|1d", "primary_count": number, "enable_multi_timeframe": boolean, "selected_timeframes": string[], "longer_timeframe": string, "longer_count": number}
+  - klines: {"primary_timeframe": "1m|3m|5m|15m|30m|1h|4h|1d", "primary_count": number(10~60，通常30~60), "enable_multi_timeframe": boolean, "selected_timeframes": string[], "longer_timeframe": string, "longer_count": number(10~100，通常30~60)}
   - indicators: {"enable_ema": bool, "ema_periods": number[], "enable_rsi": bool, "rsi_periods": number[], "enable_macd": bool, "macd_fast_period": number, "macd_slow_period": number, "enable_atr": bool, "atr_periods": number[], "enable_boll": bool, "boll_periods": number[], "enable_volume": bool, "enable_oi": bool, "enable_funding_rate": bool}
   - risk_control: {"max_positions": n(1~10), "btc_eth_max_leverage": n(1~20，建议≤10), "altcoin_max_leverage": n(1~20，建议≤5), "btc_eth_max_position_value_ratio": f(0.1~20), "altcoin_max_position_value_ratio": f(0.1~20), "max_margin_usage": f(0.1~1.0，建议≤0.9), "min_position_size": f(建议12), "min_risk_reward_ratio": f(建议3), "min_confidence": n(50~99，建议75)}
 - scan_interval_minutes: 扫描周期建议（分钟，1~1440）：scalp→1~3, intraday→5~15, swing→15~60, position→60~240

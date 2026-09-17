@@ -477,7 +477,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
 
         {/* ============ 阶段 A：发起表单 ============ */}
         {!council && (
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 min-h-0 overflow-y-auto p-6">
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 h-full">
               {/* 左：表单（3/5） */}
               <div className="lg:col-span-3 space-y-4">
@@ -645,7 +645,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
                 {isRunning && <span className="text-[10px] text-[#848E9C]">{t('aiCouncil.running', language)}</span>}
                 <span className="ml-auto text-[10px] text-[#848E9C] tabular-nums">{transcript.length} msgs</span>
               </div>
-              <div ref={feedRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+              <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2.5">
                 {transcript.map((e, i) => (
                   <TranscriptItem key={i} entry={e} lang={language} />
                 ))}
@@ -674,7 +674,7 @@ export function StrategyAICouncilModal({ open, onClose, onApply, onCreateStrateg
 
             {/* 右：角色名册 + 预算 + 结果 */}
             <div className="w-[300px] shrink-0 flex flex-col min-h-0">
-              <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-4">
+              <div className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-4">
                 {/* 预算进度 */}
                 <div className="rounded-xl px-3.5 py-3" style={{ background: '#1E2329', border: '1px solid #2B3139' }}>
                   <div className="flex items-center justify-between mb-1.5">

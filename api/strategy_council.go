@@ -712,7 +712,7 @@ func mergeCouncilConfig(base *store.StrategyConfig, payload map[string]any, warn
 				*warnings = append(*warnings, fmt.Sprintf("主周期 %q 非法，保留原值", tf))
 			}
 		}
-		if n, ok := clampInt(kl, "primary_count", 10, 500, warnings, "主周期K线数量"); ok {
+		if n, ok := clampInt(kl, "primary_count", 10, 60, warnings, "主周期K线数量"); ok {
 			base.Indicators.Klines.PrimaryCount = n
 		}
 		if b, ok := clampBool(kl, "enable_multi_timeframe"); ok {
@@ -739,7 +739,7 @@ func mergeCouncilConfig(base *store.StrategyConfig, payload map[string]any, warn
 				base.Indicators.Klines.LongerTimeframe = tf
 			}
 		}
-		if n, ok := clampInt(kl, "longer_count", 10, 500, warnings, "长周期K线数量"); ok {
+		if n, ok := clampInt(kl, "longer_count", 10, 100, warnings, "长周期K线数量"); ok {
 			base.Indicators.Klines.LongerCount = n
 		}
 	}
