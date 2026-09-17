@@ -23,7 +23,8 @@ import (
 )
 
 // maxImageCharts 单次决策最多渲染的K线图片数（控制 token 消耗，持仓币优先）
-const maxImageCharts = 4
+// 多周期模式下每币每个勾选周期一张图（如 2 币 × 3 周期 = 6 张）
+const maxImageCharts = 9
 
 // ChartReading 模型对K线图的视觉复述（用于程序判卷，判定模型是否真的读图）
 type ChartReading struct {
@@ -168,23 +169,36 @@ func buildImageChartParts(ctx *Context, userPrompt, primaryTF, lang string) ([]m
 
 	for _, sym := range symbols {
 		mdata := ctx.MarketDataMap[sym]
-		if mdata == nil {
+		if mdata == nil || mdata.TimeframeData == nil {
 			continue
 		}
-		tf, tfData := pickChartTimeframe(mdata, primaryTF)
-		if tfData == nil {
-			continue
+		// 每个勾选周期各渲染一张图（如勾选 15m/1h/4h → 每币 3 张）
+		tfs := ctx.Timeframes
+		if len(tfs) == 0 {
+			// 兜底：未提供周期列表时按主周期渲染单图
+			if tf, tfData := pickChartTimeframe(mdata, primaryTF); tfData != nil {
+				tfs = []string{tf}
+			}
 		}
-		png, err := renderSymbolChart(sym, mdata, tf, tfData, posIndex[sym])
-		if err != nil {
-			logger.Infof("⚠️ [图片模式] %s 渲染失败: %v", sym, err)
-			continue
+		for _, tf := range tfs {
+			if len(charts) >= maxImageCharts {
+				break
+			}
+			tfData := mdata.TimeframeData[tf]
+			if tfData == nil || len(tfData.Klines) == 0 {
+				continue
+			}
+			png, err := renderSymbolChart(sym, mdata, tf, tfData, posIndex[sym])
+			if err != nil {
+				logger.Infof("⚠️ [图片模式] %s %s 渲染失败: %v", sym, tf, err)
+				continue
+			}
+			charts = append(charts, renderedChart{
+				symbol:    sym,
+				timeframe: tf,
+				dataURL:   "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+			})
 		}
-		charts = append(charts, renderedChart{
-			symbol:    sym,
-			timeframe: tf,
-			dataURL:   "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
-		})
 	}
 	if len(charts) == 0 {
 		return nil, "", nil, fmt.Errorf("所有币种K线渲染失败")
@@ -216,9 +230,10 @@ func buildChartImageIntro(lang string, count int, listStr string) string {
 %s
 以下图片由程序根据真实行情数据渲染（币安深色配色）：
 - **红色蜡烛 = 阳线（收涨），绿色蜡烛 = 阴线（收跌）**（UP=RED, DOWN=GREEN）
-- 主图：蜡烛 + EMA20（琥珀色） + EMA50（紫色） + 布林带（灰色），持仓币种图中白色虚线为进场价（ENTRY）
-- 中部副图：成交量；底部副图：MACD（青色线，绕零轴）
+- 主图：蜡烛 + EMA20（琥珀色） + EMA50（紫色） + 布林带（灰色），主图内白色文字标注了图中最高价（H=）与最低价（L=），持仓币种白色虚线为进场价（ENTRY）
+- 中部副图：成交量（右轴有最大量/半量刻度）；底部副图：MACD（青色线，绕零轴，右轴有 ±峰值刻度）
 - 右侧图例写有 EMA20 / EMA50 / BOLL 上中下轨的**最新精确数值**，右轴为价格刻度
+- 多张图片对应不同时间框架（每张图标题含币种与周期），请逐张做周期对比
 
 图片只提供形态信息；精确数值（RSI、ATR、图例数值等）以文字部分为准。
 
@@ -232,9 +247,10 @@ CHART_READING: trend=<up|down|flat>; ema20_vs_ema50=<above|below>; volume=<expan
 %s
 The following images are rendered by the program from real market data (Binance dark theme):
 - **Red candle = bullish (close up), green candle = bearish (close down)** (UP=RED, DOWN=GREEN)
-- Main pane: candles + EMA20 (amber) + EMA50 (purple) + Bollinger Bands (gray); for held positions the white dashed line marks the entry price (ENTRY)
-- Middle pane: volume; bottom pane: MACD (teal line, around zero axis)
+- Main pane: candles + EMA20 (amber) + EMA50 (purple) + Bollinger Bands (gray); white text marks the highest price (H=) and lowest price (L=) in the chart; for held positions the white dashed line marks the entry price (ENTRY)
+- Middle pane: volume (right axis shows max/half-volume ticks); bottom pane: MACD (teal line, around zero axis, right axis shows +/- peak ticks)
 - The legend on the right shows the **latest exact values** of EMA20 / EMA50 / BOLL upper/middle/lower; the right axis is the price scale
+- Multiple images correspond to different timeframes (each image title contains symbol and timeframe); compare across timeframes one by one
 
 Images provide shape information only; exact numbers (RSI, ATR, legend values) are authoritative in the text section.
 

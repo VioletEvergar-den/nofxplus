@@ -192,7 +192,7 @@ func Render(s Series) ([]byte, error) {
 		for xx := plotX0; xx <= plotX1; xx++ {
 			img.Set(xx, y, colGrid)
 		}
-		d.text(plotX1+6, y-charH/2, formatFloat(t, dec), 1, colTextDim)
+		d.text(plotX1+6, y-charH, formatFloat(t, dec), 2, colTextDim)
 	}
 
 	// ---- EMA / BOLL 折线（先画线，蜡烛后画压在上面）----
@@ -248,6 +248,28 @@ func Render(s Series) ([]byte, error) {
 		}
 	}
 
+	// ---- 最高/最低价标注（贴对应K线，scale 2 白色）----
+	hiIdx, loIdx := -1, -1
+	hiP, loP := math.Inf(-1), math.Inf(1)
+	for i, c := range candles {
+		if isFinite(c.High) && c.High > hiP {
+			hiP, hiIdx = c.High, i
+		}
+		if isFinite(c.Low) && c.Low < loP {
+			loP, loIdx = c.Low, i
+		}
+	}
+	if hiIdx >= 0 {
+		cx := int(float64(plotX0) + (float64(hiIdx)+0.5)*slot)
+		yh := sc.priceToY(hiP)
+		drawMarkLabel(d, cx, clamp(yh, mainTop, mainBot), "H="+formatFloat(hiP, dec), true)
+	}
+	if loIdx >= 0 {
+		cx := int(float64(plotX0) + (float64(loIdx)+0.5)*slot)
+		yl := sc.priceToY(loP)
+		drawMarkLabel(d, cx, clamp(yl, mainTop, mainBot), "L="+formatFloat(loP, dec), false)
+	}
+
 	// ---- 成交量副图 ----
 	hline(img, 0, imgW, volTop-8, colSep)
 	d.text(plotX0+2, volTop-6, "VOL", 1, colTextDim)
@@ -259,6 +281,11 @@ func Render(s Series) ([]byte, error) {
 	}
 	if maxVol > 0 {
 		vh := volBot - volTop - 6
+		// 右轴纵坐标：最大值与半值刻度 + 半值网格线
+		midY := (volTop + 6 + volBot) / 2
+		hline(img, plotX0, plotX1, midY, colGrid)
+		d.text(imgW-axisW+6, volTop+4, fmtVol(maxVol), 2, colTextDim)
+		d.text(imgW-axisW+6, midY-charH, fmtVol(maxVol/2), 2, colTextDim)
 		for i, c := range candles {
 			if !isFinite(c.Volume) {
 				continue
@@ -291,23 +318,28 @@ func Render(s Series) ([]byte, error) {
 		mid := (macdTop + macdBot) / 2
 		hline(img, plotX0, plotX1, mid, colSep)
 		drawLineSeriesRaw(d, s.MACD, n, plotX0, plotX1, slot, ms, colMACD)
+		// 右轴纵坐标：+峰值 / 0 / -峰值
+		d.text(imgW-axisW+6, macdTop+4, "+"+fmtIndicator(macdMax), 2, colTextDim)
+		d.text(imgW-axisW+6, mid-charH, "0", 2, colTextDim)
+		d.text(imgW-axisW+6, macdBot-2*charH-2, "-"+fmtIndicator(macdMax), 2, colTextDim)
 	}
 
 	// ---- 时间轴 ----
+	// 标签间隔自适应：保证相邻标签文字（scale 2）不重叠
 	labelEvery := 1
-	if n > 6 {
-		labelEvery = (n + 5) / 6
+	if gap := float64(len("01-02 15:04")*charW*2 + 10); gap > slot {
+		labelEvery = int(math.Ceil(gap / slot))
 	}
 	for i := 0; i < n; i += labelEvery {
 		cx := int(float64(plotX0) + (float64(i)+0.5)*slot)
 		img.Set(cx, mainBot+2, colSep)
 		img.Set(cx, volBot+2, colSep)
 		t := time.Unix(candles[i].Time, 0).UTC().Format("01-02 15:04")
-		tx := cx - len(t)*charW/2
+		tx := cx - len(t)*charW // scale 2 文字宽 len*charW*2，居中取半
 		if tx < plotX0 {
 			tx = plotX0
 		}
-		d.text(tx, timeAxisY, t, 1, colTextDim)
+		d.text(tx, timeAxisY, t, 2, colTextDim)
 	}
 
 	// ---- 渲染后自校验：最后一根收盘价的落点必须位于主图内 ----
@@ -449,7 +481,11 @@ func bresenham(img *image.RGBA, x0, y0, x1, y1 int, c color.RGBA) {
 	}
 	err := dx + dy
 	for {
+		// 线条垂直加粗 2px，提升小尺寸图上的可读性
 		img.Set(x0, y0, c)
+		if y0+1 < imgH {
+			img.Set(x0, y0+1, c)
+		}
 		if x0 == x1 && y0 == y1 {
 			return
 		}
@@ -535,6 +571,65 @@ func fmtPrice(v float64, sc priceScaler) string {
 
 func formatFloat(v float64, dec int) string {
 	return strconv.FormatFloat(v, 'f', dec, 64)
+}
+
+// drawMarkLabel 在主图内绘制最高/最低价标注（scale 2 白色，水平居中不越界）
+// above=true 文字画在标注点上方（最高价），否则画在下方（最低价），越出主图时收进图内
+func drawMarkLabel(d *drawer, cx, y int, txt string, above bool) {
+	const markScale = 2
+	tw := len(txt) * charW * markScale
+	tx := cx - tw/2
+	if tx < plotPad {
+		tx = plotPad
+	}
+	if tx+tw > imgW-axisW-4 {
+		tx = imgW - axisW - 4 - tw
+	}
+	if tx < plotPad {
+		tx = plotPad
+	}
+	th := markScale * charH
+	if above {
+		y -= 4 + th
+		if y < mainTop {
+			y = mainTop
+		}
+	} else {
+		y += 4
+		if y+th > mainBot {
+			y = mainBot - th
+		}
+	}
+	d.text(tx, y, txt, markScale, colWhite)
+}
+
+// fmtVol 成交量缩写：1.20B / 1.25M / 850.5K / 980
+func fmtVol(v float64) string {
+	switch {
+	case v >= 1e9:
+		return strconv.FormatFloat(v/1e9, 'f', 2, 64) + "B"
+	case v >= 1e6:
+		return strconv.FormatFloat(v/1e6, 'f', 2, 64) + "M"
+	case v >= 1e3:
+		return strconv.FormatFloat(v/1e3, 'f', 1, 64) + "K"
+	default:
+		return strconv.FormatFloat(v, 'f', 0, 64)
+	}
+}
+
+// fmtIndicator MACD 等指标刻度格式（量级自适应，差值量级与价格不同）
+func fmtIndicator(v float64) string {
+	abs := math.Abs(v)
+	switch {
+	case abs >= 100:
+		return strconv.FormatFloat(v, 'f', 2, 64)
+	case abs >= 1:
+		return strconv.FormatFloat(v, 'f', 4, 64)
+	case abs >= 0.001:
+		return strconv.FormatFloat(v, 'f', 6, 64)
+	default:
+		return strconv.FormatFloat(v, 'f', 8, 64)
+	}
 }
 
 // sanitizeASCII 将非支持字符替换为 '?'（内置字体仅支持 ASCII 子集）
