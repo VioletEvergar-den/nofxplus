@@ -1997,6 +1997,16 @@ func (s *Server) handleProbeModelCapabilities(c *gin.Context) {
 			break
 		}
 	}
+	// 启发式未命中时实测：发送 enable_thinking=true 探测请求，
+	// 响应出现 reasoning_content / reasoning / reasoning_tokens 即判定支持
+	// （覆盖 deepseek-v4.1-flash 等支持思考但名称不含关键词的模型）
+	if !caps["reasoning"] {
+		if pc, ok := client.(interface {
+			ProbeReasoningSupport() bool
+		}); ok && pc.ProbeReasoningSupport() {
+			caps["reasoning"] = true
+		}
+	}
 
 	// 4) 视觉（多模态）：发送 2x2 红色 PNG，看模型能否接受 image_url 输入
 	// mcp.Message 的 Content 为纯文本，多模态 content 数组需走原始 messages 通道

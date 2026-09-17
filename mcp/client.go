@@ -508,6 +508,67 @@ func (client *Client) callWithParts(systemPrompt string, userParts []ContentPart
 	return result, nil
 }
 
+// ProbeReasoningSupport 实测深度思考（推理）能力：
+// 发送带 enable_thinking=true 的探测请求（Qwen3/DeepSeek 等 OpenAI 兼容层的通用思考开关，
+// 不支持该参数的平台会忽略未知字段按普通模式应答），并检查响应中是否出现思考内容：
+//  1. choices[].message.reasoning_content 非空（DeepSeek/Qwen 风格）
+//  2. choices[].message.reasoning 非空（OpenRouter 风格）
+//  3. usage.completion_tokens_details.reasoning_tokens > 0（OpenAI o 系风格）
+//
+// 命中任一即判定支持深度思考；请求失败或无思考字段返回 false
+func (client *Client) ProbeReasoningSupport() bool {
+	requestBody := client.hooks.buildMCPRequestBody("你是一个简洁的助手。", "1+1等于几？只回答数字。")
+	// 开启思考模式（社区通用约定；不支持的平台忽略）
+	requestBody["enable_thinking"] = true
+	// 思考内容需要额外 token 预算，防止思考被 max_tokens 截断导致误判
+	requestBody["max_tokens"] = 2048
+
+	jsonData, err := client.hooks.marshalRequestBody(requestBody)
+	if err != nil {
+		return false
+	}
+	url := client.hooks.buildUrl()
+	req, err := client.hooks.buildRequest(url, jsonData)
+	if err != nil {
+		return false
+	}
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	var out struct {
+		Choices []struct {
+			Message struct {
+				ReasoningContent string `json:"reasoning_content"`
+				Reasoning        string `json:"reasoning"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage *struct {
+			CompletionTokensDetails *struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
+		} `json:"usage"`
+	}
+	if json.Unmarshal(body, &out) != nil {
+		return false
+	}
+	for _, ch := range out.Choices {
+		if strings.TrimSpace(ch.Message.ReasoningContent) != "" || strings.TrimSpace(ch.Message.Reasoning) != "" {
+			return true
+		}
+	}
+	if out.Usage != nil && out.Usage.CompletionTokensDetails != nil && out.Usage.CompletionTokensDetails.ReasoningTokens > 0 {
+		return true
+	}
+	return false
+}
+
 func (client *Client) String() string {
 	return fmt.Sprintf("[Provider: %s, Model: %s]",
 		client.Provider, client.Model)
