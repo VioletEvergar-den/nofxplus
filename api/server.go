@@ -582,6 +582,10 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 	if len(exchangeIDShort) > 8 {
 		exchangeIDShort = exchangeIDShort[:8]
 	}
+	if exchangeIDShort == "" {
+		// 模拟盘无交易所账户，用固定前缀便于识别
+		exchangeIDShort = "paper"
+	}
 	traderID := fmt.Sprintf("%s_%s_%d", exchangeIDShort, req.AIModelID, time.Now().Unix())
 
 	// Set default values
@@ -1067,12 +1071,12 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Trader's AI model is not enabled, please enable the AI model first"})
 				return
 			}
-			// Check exchange
-			if fullCfg.Exchange == nil {
+			// Check exchange（模拟盘无交易所账户，跳过检查）
+			if fullCfg.Exchange == nil && !fullCfg.Trader.PaperTrading {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Trader's exchange does not exist, please check exchange configuration"})
 				return
 			}
-			if !fullCfg.Exchange.Enabled {
+			if fullCfg.Exchange != nil && !fullCfg.Exchange.Enabled && !fullCfg.Trader.PaperTrading {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Trader's exchange is not enabled, please enable the exchange first"})
 				return
 			}

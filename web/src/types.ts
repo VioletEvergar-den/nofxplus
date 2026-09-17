@@ -266,6 +266,7 @@ export interface TraderConfigData {
   scan_interval_minutes: number
   initial_balance: number
   is_running: boolean
+  paper_trading?: boolean  // 本地模拟盘
   enable_feedback?: boolean  // 启用反馈分析
   enable_llm_feedback?: boolean  // 启用LLM反馈分析
   enable_prompt_evolution?: boolean  // 启用提示词进化

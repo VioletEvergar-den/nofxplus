@@ -70,6 +70,7 @@ export function TraderConfigModal({
     ai_model: '',
     exchange_id: '',
     paper_trading: false,
+    initial_balance: 1000,
     strategy_id: '',
     trading_mode: '',
     is_cross_margin: true,
@@ -115,7 +116,7 @@ export function TraderConfigModal({
     if (traderData) {
       setFormData({
         ...traderData,
-        paper_trading: (traderData as any).paper_trading ?? false,
+        paper_trading: traderData.paper_trading ?? false,
         strategy_id: traderData.strategy_id || '',
         trading_mode: traderData.trading_mode || '',
         enable_feedback: traderData.enable_feedback ?? true,
@@ -131,6 +132,7 @@ export function TraderConfigModal({
         ai_model: availableModels[0]?.id || '',
         exchange_id: availableExchanges[0]?.id || '',
         paper_trading: false,
+        initial_balance: 1000,
         strategy_id: '',
         trading_mode: '',
         is_cross_margin: true,
@@ -800,7 +802,7 @@ export function TraderConfigModal({
               )}
 
               {/* Create mode info */}
-              {!isEditMode && (
+              {!isEditMode && !formData.paper_trading && (
                 <div className="p-3 bg-[#1E2329] border border-[#2B3139] rounded flex items-center gap-2">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"

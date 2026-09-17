@@ -400,7 +400,8 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
         return
       }
 
-      if (!exchange) {
+      // 模拟盘交易员不绑定交易所，跳过交易所校验
+      if (!exchange && !editingTrader.paper_trading) {
         toast.error(t('exchangeConfigNotExist', language))
         return
       }
