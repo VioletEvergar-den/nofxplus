@@ -897,6 +897,8 @@ type IndicatorConfig struct {
 	Klines KlineConfig `json:"klines"`
 	// raw kline data (OHLCV) - always enabled, required for AI analysis
 	EnableRawKlines bool `json:"enable_raw_klines"`
+	// K线图片模式（实验）：主时间框架K线渲染为 PNG 图片供多模态 AI 阅读，替代文字K线表；模型不支持视觉时自动回退文字模式
+	EnableChartImage bool `json:"enable_chart_image"`
 	// technical indicator switches
 	EnableEMA         bool `json:"enable_ema"`
 	EnableMACD        bool `json:"enable_macd"`
@@ -1093,6 +1095,9 @@ func (c *StrategyConfig) AvailableIndicatorsString(sb *strings.Builder, lang str
 		if indicators.EnableVolume {
 			sb.WriteString("- 成交量数据\n")
 		}
+		if indicators.EnableChartImage {
+			sb.WriteString("- K线图片模式：主时间框架K线以渲染图片提供（含EMA20/50、布林带图例精确值），文字K线表省略\n")
+		}
 		if len(c.CoinSource.StaticCoins) > 0 || c.CoinSource.UseCoinPool || c.CoinSource.UseOITop {
 			sb.WriteString("- AI500 / OI_Top 筛选标签（如有）\n")
 		}
@@ -1140,6 +1145,9 @@ func (c *StrategyConfig) AvailableIndicatorsString(sb *strings.Builder, lang str
 		}
 		if indicators.EnableVolume {
 			sb.WriteString("- Volume data\n")
+		}
+		if indicators.EnableChartImage {
+			sb.WriteString("- K-line image mode: primary timeframe candles provided as rendered images (with exact EMA20/50 & Bollinger legend values), raw kline text tables omitted\n")
 		}
 		if len(c.CoinSource.StaticCoins) > 0 || c.CoinSource.UseCoinPool || c.CoinSource.UseOITop {
 			sb.WriteString("- AI500 / OI_Top filter tags (if available)\n")

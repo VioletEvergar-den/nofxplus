@@ -199,6 +199,43 @@ func (client *Client) CallWithMessages(systemPrompt, userPrompt string) (string,
 	return "", fmt.Errorf("still failed after %d retries: %w", maxRetries, lastErr)
 }
 
+// CallWithMessagesWithImages 多模态模板方法 - user 消息为 content 数组（文本+图片），固定重试流程
+func (client *Client) CallWithMessagesWithImages(systemPrompt string, userParts []ContentPart) (string, error) {
+	if client.APIKey == "" {
+		return "", fmt.Errorf("AI API key not set, please call SetAPIKey first")
+	}
+
+	var lastErr error
+	maxRetries := client.config.MaxRetries
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if attempt > 1 {
+			client.logger.Warnf("⚠️  AI API call failed, retrying (%d/%d)...", attempt, maxRetries)
+		}
+
+		result, err := client.hooks.callWithParts(systemPrompt, userParts)
+		if err == nil {
+			if attempt > 1 {
+				client.logger.Infof("✓ AI API retry succeeded")
+			}
+			return result, nil
+		}
+
+		lastErr = err
+		if !client.hooks.isRetryableError(err) {
+			return "", err
+		}
+
+		if attempt < maxRetries {
+			waitTime := client.config.RetryWaitBase * time.Duration(attempt)
+			client.logger.Infof("⏳ Waiting %v before retry...", waitTime)
+			time.Sleep(waitTime)
+		}
+	}
+
+	return "", fmt.Errorf("still failed after %d retries: %w", maxRetries, lastErr)
+}
+
 func (client *Client) setAuthHeader(reqHeader http.Header) {
 	reqHeader.Set("Authorization", fmt.Sprintf("Bearer %s", client.APIKey))
 }
@@ -227,6 +264,34 @@ func (client *Client) buildMCPRequestBody(systemPrompt, userPrompt string) map[s
 		"temperature": client.config.Temperature, // Use configured temperature
 	}
 	// OpenAI newer models use max_completion_tokens instead of max_tokens
+	if client.Provider == ProviderOpenAI {
+		requestBody["max_completion_tokens"] = client.MaxTokens
+	} else {
+		requestBody["max_tokens"] = client.MaxTokens
+	}
+	return requestBody
+}
+
+// buildMCPRequestBodyWithParts 多模态请求体：user 消息 content 为数组（文本+图片）
+func (client *Client) buildMCPRequestBodyWithParts(systemPrompt string, userParts []ContentPart) map[string]any {
+	messages := []Message{}
+
+	if systemPrompt != "" {
+		messages = append(messages, NewSystemMessage(systemPrompt))
+	}
+	// 图片过大时提示（部分网关限制请求体大小）
+	for _, p := range userParts {
+		if p.Type == "image_url" && p.ImageURL != nil {
+			client.logger.Infof("🖼️ Attaching chart image: %.1f KB", float64(len(p.ImageURL.URL))/1024)
+		}
+	}
+	messages = append(messages, Message{Role: "user", ContentParts: userParts})
+
+	requestBody := map[string]interface{}{
+		"model":       client.Model,
+		"messages":    messages,
+		"temperature": client.config.Temperature,
+	}
 	if client.Provider == ProviderOpenAI {
 		requestBody["max_completion_tokens"] = client.MaxTokens
 	} else {
@@ -394,6 +459,55 @@ func (client *Client) call(systemPrompt, userPrompt string) (string, error) {
 	return result, nil
 }
 
+// callWithParts 多模态单次调用（固定流程，与 call 相同链路，仅 user 消息为 content 数组）
+func (client *Client) callWithParts(systemPrompt string, userParts []ContentPart) (string, error) {
+	client.logger.Infof("📡 [%s] Request AI Server (multimodal): BaseURL: %s", client.String(), client.BaseURL)
+
+	// Step 1: Build request body (via hooks for dynamic dispatch)
+	requestBody := client.hooks.buildMCPRequestBodyWithParts(systemPrompt, userParts)
+
+	// Step 2: Serialize request body (via hooks for dynamic dispatch)
+	jsonData, err := client.hooks.marshalRequestBody(requestBody)
+	if err != nil {
+		return "", err
+	}
+
+	// Step 3: Build URL (via hooks for dynamic dispatch)
+	url := client.hooks.buildUrl()
+
+	// Step 4: Create HTTP request (fixed logic)
+	req, err := client.hooks.buildRequest(url, jsonData)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Step 5: Send HTTP request (fixed logic)
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Step 6: Read response body (fixed logic)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Step 7: Check HTTP status code (fixed logic)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API returned error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Step 8: Parse response (via hooks for dynamic dispatch)
+	result, err := client.hooks.parseMCPResponse(body)
+	if err != nil {
+		return "", fmt.Errorf("fail to parse AI server response: %w", err)
+	}
+
+	return result, nil
+}
+
 func (client *Client) String() string {
 	return fmt.Sprintf("[Provider: %s, Model: %s]",
 		client.Provider, client.Model)
@@ -526,6 +640,131 @@ func (client *Client) callWithRequest(req *Request) (string, error) {
 	}
 
 	return result, nil
+}
+
+// CallWithRawMessages calls AI API using raw messages array (supports multimodal content)
+//
+// Message.Content is a plain string and cannot express multimodal content arrays
+// (e.g. {"type":"image_url",...}). This method accepts messages already shaped per
+// the API protocol, and reuses the same retry/timeout/parse flow as CallWithRequest.
+//
+// Usage example:
+//
+//	messages := []map[string]any{
+//	    {"role": "user", "content": []map[string]any{
+//	        {"type": "text", "text": "What color is this image?"},
+//	        {"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64,..."}}},
+//	    },
+//	}
+//	result, err := client.CallWithRawMessages(messages)
+func (client *Client) CallWithRawMessages(messages []map[string]any) (string, error) {
+	if client.APIKey == "" {
+		return "", fmt.Errorf("AI API key not set, please call SetAPIKey first")
+	}
+
+	// Fixed retry flow
+	var lastErr error
+	maxRetries := client.config.MaxRetries
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if attempt > 1 {
+			client.logger.Warnf("⚠️  AI API call failed, retrying (%d/%d)...", attempt, maxRetries)
+		}
+
+		// Call single request
+		result, err := client.callWithRawMessages(messages)
+		if err == nil {
+			if attempt > 1 {
+				client.logger.Infof("✓ AI API retry succeeded")
+			}
+			return result, nil
+		}
+
+		lastErr = err
+		// Check if error is retryable
+		if !client.hooks.isRetryableError(err) {
+			return "", err
+		}
+
+		// Wait before retry
+		if attempt < maxRetries {
+			waitTime := client.config.RetryWaitBase * time.Duration(attempt)
+			client.logger.Infof("⏳ Waiting %v before retry...", waitTime)
+			time.Sleep(waitTime)
+		}
+	}
+
+	return "", fmt.Errorf("still failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// callWithRawMessages single AI API call (using raw messages array)
+func (client *Client) callWithRawMessages(messages []map[string]any) (string, error) {
+	// Print current AI configuration
+	client.logger.Infof("📡 [%s] Request AI Server with Raw Messages: BaseURL: %s", client.String(), client.BaseURL)
+	client.logger.Debugf("[%s] Messages count: %d", client.String(), len(messages))
+
+	// Build request body (from raw messages array)
+	requestBody := client.buildRequestBodyFromRawMessages(messages)
+
+	// Serialize request body
+	jsonData, err := client.hooks.marshalRequestBody(requestBody)
+	if err != nil {
+		return "", err
+	}
+
+	// Build URL
+	url := client.hooks.buildUrl()
+	client.logger.Infof("📡 [MCP %s] Request URL: %s", client.String(), url)
+
+	// Create HTTP request
+	httpReq, err := client.hooks.buildRequest(url, jsonData)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Send HTTP request
+	resp, err := client.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Check HTTP status code
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API returned error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	result, err := client.hooks.parseMCPResponse(body)
+	if err != nil {
+		return "", fmt.Errorf("fail to parse AI server response: %w", err)
+	}
+
+	return result, nil
+}
+
+// buildRequestBodyFromRawMessages builds request body from raw messages array
+func (client *Client) buildRequestBodyFromRawMessages(messages []map[string]any) map[string]any {
+	requestBody := map[string]interface{}{
+		"model":       client.Model,
+		"messages":    messages,
+		"temperature": client.config.Temperature,
+	}
+
+	// OpenAI newer models use max_completion_tokens instead of max_tokens
+	if client.Provider == ProviderOpenAI {
+		requestBody["max_completion_tokens"] = client.MaxTokens
+	} else {
+		requestBody["max_tokens"] = client.MaxTokens
+	}
+
+	return requestBody
 }
 
 // buildRequestBodyFromRequest builds request body from Request object

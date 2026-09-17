@@ -126,7 +126,7 @@ export interface AIModel {
   apiKey?: string
   customApiUrl?: string
   customModelName?: string
-  capabilities?: string           // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool}
+  capabilities?: string           // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool,"vision":bool}
 }
 
 export interface Exchange {
@@ -602,6 +602,8 @@ export interface IndicatorConfig {
   enable_volume: boolean;
   enable_oi: boolean;
   enable_funding_rate: boolean;
+  // K线图片模式（实验）：将 K 线渲染成图片一并提供给 AI（需模型支持视觉）
+  enable_chart_image?: boolean;
   ema_periods?: number[];
   rsi_periods?: number[];
   atr_periods?: number[];

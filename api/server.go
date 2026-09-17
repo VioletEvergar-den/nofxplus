@@ -496,7 +496,7 @@ type SafeModelConfig struct {
 	Enabled         bool   `json:"enabled"`
 	CustomAPIURL    string `json:"customApiUrl"`    // Custom API URL (usually not sensitive)
 	CustomModelName string `json:"customModelName"` // Custom model name (not sensitive)
-	Capabilities    string `json:"capabilities,omitempty"` // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool}
+	Capabilities    string `json:"capabilities,omitempty"` // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool,"vision":bool}
 }
 
 type ExchangeConfig struct {
@@ -1932,7 +1932,7 @@ func newAIClientForModel(model *store.AIModel) mcp.AIClient {
 	return aiClient
 }
 
-// handleProbeModelCapabilities 检测模型能力（结构化输出/工具调用/深度思考），结果存为标签
+// handleProbeModelCapabilities 检测模型能力（结构化输出/工具调用/深度思考/视觉），结果存为标签
 func (s *Server) handleProbeModelCapabilities(c *gin.Context) {
 	userID := c.GetString("user_id")
 	modelID := c.Param("id")
@@ -1947,7 +1947,7 @@ func (s *Server) handleProbeModelCapabilities(c *gin.Context) {
 	}
 
 	client := newAIClientForModel(model)
-	caps := map[string]bool{"json_mode": false, "tool_call": false, "reasoning": false}
+	caps := map[string]bool{"json_mode": false, "tool_call": false, "reasoning": false, "vision": false}
 
 	// 1) 结构化输出：要求纯 JSON，看能否解析出对象
 	if resp, err := client.CallWithMessages(
@@ -1995,6 +1995,27 @@ func (s *Server) handleProbeModelCapabilities(c *gin.Context) {
 		if strings.Contains(nameLower, kw) {
 			caps["reasoning"] = true
 			break
+		}
+	}
+
+	// 4) 视觉（多模态）：发送 2x2 红色 PNG，看模型能否接受 image_url 输入
+	// mcp.Message 的 Content 为纯文本，多模态 content 数组需走原始 messages 通道
+	visionMessages := []map[string]any{
+		{
+			"role": "user",
+			"content": []map[string]any{
+				{"type": "text", "text": "What color is this image? Answer with one word."},
+				{"type": "image_url", "image_url": map[string]any{
+					"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAARSURBVBhXY/jPwPAfhBlgDABHygf5POQJCgAAAABJRU5ErkJggg==",
+				}},
+			},
+		},
+	}
+	if resp, err := client.CallWithRawMessages(visionMessages); err == nil {
+		// 请求成功（HTTP 2xx）且返回了任意 content 即判定支持；错误响应在 mcp 层已转为 error。
+		// 理想回答应包含 red/红，MVP 不强校验回答内容
+		if strings.TrimSpace(resp) != "" {
+			caps["vision"] = true
 		}
 	}
 

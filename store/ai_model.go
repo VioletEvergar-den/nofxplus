@@ -26,7 +26,7 @@ type AIModel struct {
 	APIKey          string    `json:"apiKey"`
 	CustomAPIURL    string    `json:"customApiUrl"`
 	CustomModelName string    `json:"customModelName"`
-	Capabilities    string    `json:"capabilities,omitempty"` // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool}
+	Capabilities    string    `json:"capabilities,omitempty"` // 能力标签 JSON: {"json_mode":bool,"tool_call":bool,"reasoning":bool,"vision":bool}
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }

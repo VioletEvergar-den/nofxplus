@@ -1,9 +1,49 @@
 package mcp
 
+import "encoding/json"
+
 // Message represents a conversation message
 type Message struct {
 	Role    string `json:"role"`    // "system", "user", "assistant"
 	Content string `json:"content"` // Message content
+	// ContentParts 多模态内容数组（非空时整个 content 序列化为数组，Content 字段被忽略）
+	ContentParts []ContentPart `json:"-"`
+}
+
+// MarshalJSON 兼容两种形态：纯文本消息输出 content 字符串；多模态消息输出 content 数组
+func (m Message) MarshalJSON() ([]byte, error) {
+	if len(m.ContentParts) > 0 {
+		return json.Marshal(struct {
+			Role    string        `json:"role"`
+			Content []ContentPart `json:"content"`
+		}{Role: m.Role, Content: m.ContentParts})
+	}
+	return json.Marshal(struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}{Role: m.Role, Content: m.Content})
+}
+
+// ContentPart OpenAI 兼容多模态消息内容片段
+type ContentPart struct {
+	Type     string    `json:"type"` // "text" 或 "image_url"
+	Text     string    `json:"text,omitempty"`
+	ImageURL *ImageURL `json:"image_url,omitempty"`
+}
+
+// ImageURL 图片引用（支持 data:image/png;base64,... 形式的内联图片）
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
+// NewTextPart 创建文本内容片段
+func NewTextPart(text string) ContentPart {
+	return ContentPart{Type: "text", Text: text}
+}
+
+// NewImagePart 创建图片内容片段
+func NewImagePart(dataURL string) ContentPart {
+	return ContentPart{Type: "image_url", ImageURL: &ImageURL{URL: dataURL}}
 }
 
 // Tool represents a tool/function that AI can call

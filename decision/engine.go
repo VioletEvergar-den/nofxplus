@@ -181,6 +181,8 @@ type Context struct {
 	Timeframes             []string                                `json:"-"`
 	GivebackMode           string                                  `json:"-"` // 浮盈回撤保护模式: off(默认,提示词不出现) / soft(软规则,AI决定) / hard(硬规则,用户固定值,AI无需知道)
 	GivebackHardPct        float64                                 `json:"-"` // 硬规则阈值（mode=hard 时执行层直接使用，提示词不渲染）
+	ImageChartMode         bool                                    `json:"-"` // K线图片模式：文字K线表省略，主时间框架K线以渲染图片提供（策略开关 EnableChartImage）
+	ImageChartSymbols      map[string]bool                         `json:"-"` // 实际渲染成图片的币种集合（判卷用）
 }
 
 // Decision AI trading decision
@@ -203,13 +205,14 @@ type Decision struct {
 
 // FullDecision AI's complete decision (including chain of thought)
 type FullDecision struct {
-	SystemPrompt        string     `json:"system_prompt"`
-	UserPrompt          string     `json:"user_prompt"`
-	CoTTrace            string     `json:"cot_trace"`
-	Decisions           []Decision `json:"decisions"`
-	RawResponse         string     `json:"raw_response"`
-	Timestamp           time.Time  `json:"timestamp"`
-	AIRequestDurationMs int64      `json:"ai_request_duration_ms,omitempty"`
+	SystemPrompt        string        `json:"system_prompt"`
+	UserPrompt          string        `json:"user_prompt"`
+	CoTTrace            string        `json:"cot_trace"`
+	Decisions           []Decision    `json:"decisions"`
+	RawResponse         string        `json:"raw_response"`
+	Timestamp           time.Time     `json:"timestamp"`
+	AIRequestDurationMs int64         `json:"ai_request_duration_ms,omitempty"`
+	ChartReading        *ChartReading `json:"chart_reading,omitempty"` // 图片模式下模型对K线图的复述（程序判卷用）
 }
 
 // QuantData quantitative data structure (fund flow, position changes, price changes)
@@ -314,15 +317,44 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 	riskConfig := engine.GetRiskControlConfig()
 	systemPrompt := engine.BuildSystemPromptWithContext(ctx.Account.TotalEquity, ctx)
 
+	// 2.5 K线图片模式开关（策略实验室 → 技术指标 → K线图片模式）
+	indicatorCfg := engine.GetConfig().Indicators
+	primaryTF := indicatorCfg.Klines.PrimaryTimeframe
+	lang := string(detectLanguage(engine.GetConfig().PromptSections.RoleDefinition))
+	if indicatorCfg.EnableChartImage {
+		ctx.ImageChartMode = true
+	}
+
 	// 3. Build User Prompt using strategy engine
+	// （图片模式下 formatter 会自动省略候选币文字K线表，改为指标速览）
 	userPrompt := engine.BuildUserPrompt(ctx)
 
 	// 4. Call AI API
+	// 图片模式：优先多模态调用（文字+K线渲染图片），渲染失败或模型不支持视觉时自动回退纯文字
 	aiCallStart := time.Now()
-	aiResponse, err := mcpClient.CallWithMessages(systemPrompt, userPrompt)
+	var aiResponse string
+	var aiErr error
+	imageModeUsed := false
+	if ctx.ImageChartMode && !isVisionUnsupported(mcpClient) {
+		if parts, perr := buildImageChartParts(ctx, userPrompt, primaryTF, lang); perr != nil {
+			logger.Infof("📈 [图片模式] 渲染失败，回退文字模式: %v", perr)
+		} else {
+			if resp, cerr := mcpClient.CallWithMessagesWithImages(systemPrompt, parts); cerr == nil {
+				aiResponse = resp
+				imageModeUsed = true
+				logger.Infof("📈 [图片模式] 多模态调用成功，共 %d 张K线图", len(parts)-1)
+			} else {
+				logger.Infof("📈 [图片模式] 多模态调用失败（可能不支持视觉），标记并回退文字模式: %v", cerr)
+				markVisionUnsupported(mcpClient)
+			}
+		}
+	}
+	if !imageModeUsed {
+		aiResponse, aiErr = mcpClient.CallWithMessages(systemPrompt, userPrompt)
+	}
 	aiCallDuration := time.Since(aiCallStart)
-	if err != nil {
-		return nil, fmt.Errorf("AI API call failed: %w", err)
+	if aiErr != nil {
+		return nil, fmt.Errorf("AI API call failed: %w", aiErr)
 	}
 
 	// 5. Parse AI response
@@ -341,6 +373,10 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 		decision.UserPrompt = userPrompt
 		decision.AIRequestDurationMs = aiCallDuration.Milliseconds()
 		decision.RawResponse = aiResponse
+		if imageModeUsed {
+			decision.ChartReading = extractChartReading(aiResponse)
+			gradeImageChartReadings(decision, ctx, primaryTF)
+		}
 	}
 
 	if err != nil {

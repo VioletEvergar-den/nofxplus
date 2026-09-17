@@ -63,6 +63,10 @@ export function IndicatorEditor({
       rawKlinesDesc: { zh: '必须 - 开高低收量原始数据，AI 核心分析依据', en: 'Required - Open/High/Low/Close/Volume data for AI' },
       required: { zh: '必须', en: 'Required' },
 
+      // Chart image mode
+      chartImageMode: { zh: 'K线图片模式（实验）', en: 'K-line Image Mode (Experimental)' },
+      chartImageDesc: { zh: '将 K 线渲染成图片一并提供给 AI，需模型支持视觉能力', en: 'Render K-lines into an image for the AI, requires a vision-capable model' },
+
       // Indicators
       ema: { zh: 'EMA 均线', en: 'EMA' },
       emaDesc: { zh: '指数移动平均线', en: 'Exponential Moving Average' },
@@ -199,6 +203,32 @@ export function IndicatorEditor({
               checked={true}
               disabled={true}
               className="w-5 h-5 rounded accent-yellow-500 cursor-not-allowed"
+            />
+          </div>
+
+          {/* Chart Image Mode (Experimental) */}
+          <div
+            className="flex items-center justify-between p-3 rounded-lg transition-all"
+            style={{
+              background: config.enable_chart_image ? 'rgba(14, 203, 129, 0.08)' : 'transparent',
+              border: `1px solid ${config.enable_chart_image ? 'rgba(14, 203, 129, 0.3)' : '#2B3139'}`,
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(14, 203, 129, 0.15)' }}>
+                <LineChart className="w-4 h-4" style={{ color: '#0ECB81' }} />
+              </div>
+              <div>
+                <span className="text-sm font-medium" style={{ color: '#EAECEF' }}>{t('chartImageMode')}</span>
+                <p className="text-xs mt-0.5" style={{ color: '#848E9C' }}>{t('chartImageDesc')}</p>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={config.enable_chart_image || false}
+              onChange={(e) => !disabled && onChange({ ...config, enable_chart_image: e.target.checked })}
+              disabled={disabled}
+              className="w-5 h-5 rounded accent-green-500"
             />
           </div>
 

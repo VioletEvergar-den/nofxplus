@@ -158,9 +158,13 @@ func formatCandidateCoinsZH(ctx *Context) string {
 			if mdata, ok := ctx.MarketDataMap[coin.Symbol]; ok {
 				sb.WriteString(fmt.Sprintf("当前价格: %s\n\n", formatPriceSmart(mdata.CurrentPrice)))
 
-				// K线数据（多时间框架）
+				// K线数据（多时间框架）；图片模式下省略文字K线表，只保留指标最新值速览（形态信息由K线图片提供）
 				if mdata.TimeframeData != nil {
-					sb.WriteString(formatKlineDataZH(coin.Symbol, mdata.TimeframeData, ctx.Timeframes))
+					if ctx.ImageChartMode {
+						sb.WriteString(formatIndicatorSnapshotZH(coin.Symbol, mdata.TimeframeData, ctx.Timeframes))
+					} else {
+						sb.WriteString(formatKlineDataZH(coin.Symbol, mdata.TimeframeData, ctx.Timeframes))
+					}
 				}
 			}
 		}
@@ -173,6 +177,88 @@ func formatCandidateCoinsZH(ctx *Context) string {
 		}
 	}
 
+	return sb.String()
+}
+
+// formatIndicatorSnapshotZH 图片模式下的指标最新值速览（省略完整序列，形态信息由K线图片提供）
+func formatIndicatorSnapshotZH(symbol string, tfData map[string]*market.TimeframeSeriesData, timeframes []string) string {
+	var sb strings.Builder
+	for _, tf := range timeframes {
+		data, ok := tfData[tf]
+		if !ok || data == nil || len(data.Klines) == 0 {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("#### %s %s 指标速览（K线形态见图片，完整序列已省略）\n", symbol, tf))
+		var parts []string
+		n := len(data.Klines)
+		lastClose := formatPriceSmart(data.Klines[n-1].Close)
+		parts = append(parts, fmt.Sprintf("最新收盘: %s", lastClose))
+		if len(data.RSI7Values) > 0 {
+			parts = append(parts, fmt.Sprintf("RSI7: %.1f", data.RSI7Values[len(data.RSI7Values)-1]))
+		}
+		if len(data.RSI14Values) > 0 {
+			parts = append(parts, fmt.Sprintf("RSI14: %.1f", data.RSI14Values[len(data.RSI14Values)-1]))
+		}
+		if data.ATR14 > 0 {
+			parts = append(parts, fmt.Sprintf("ATR14: %s", formatPriceSmart(data.ATR14)))
+		}
+		if len(data.MACDValues) > 0 {
+			parts = append(parts, fmt.Sprintf("MACD: %s", formatPriceSmart(data.MACDValues[len(data.MACDValues)-1])))
+		}
+		if len(data.EMA20Values) > 0 {
+			parts = append(parts, fmt.Sprintf("EMA20: %s", formatPriceSmart(data.EMA20Values[len(data.EMA20Values)-1])))
+		}
+		if len(data.EMA50Values) > 0 {
+			parts = append(parts, fmt.Sprintf("EMA50: %s", formatPriceSmart(data.EMA50Values[len(data.EMA50Values)-1])))
+		}
+		if len(data.BOLLUpper) > 0 && len(data.BOLLLower) > 0 {
+			parts = append(parts, fmt.Sprintf("BOLL上/下轨: %s / %s",
+				formatPriceSmart(data.BOLLUpper[len(data.BOLLUpper)-1]),
+				formatPriceSmart(data.BOLLLower[len(data.BOLLLower)-1])))
+		}
+		sb.WriteString(strings.Join(parts, " | ") + "\n\n")
+	}
+	return sb.String()
+}
+
+// formatIndicatorSnapshotEN indicator snapshot for image mode (English)
+func formatIndicatorSnapshotEN(symbol string, tfData map[string]*market.TimeframeSeriesData, timeframes []string) string {
+	var sb strings.Builder
+	for _, tf := range timeframes {
+		data, ok := tfData[tf]
+		if !ok || data == nil || len(data.Klines) == 0 {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("#### %s %s indicator snapshot (chart shape in image, full series omitted)\n", symbol, tf))
+		var parts []string
+		n := len(data.Klines)
+		lastClose := formatPriceSmart(data.Klines[n-1].Close)
+		parts = append(parts, fmt.Sprintf("Last close: %s", lastClose))
+		if len(data.RSI7Values) > 0 {
+			parts = append(parts, fmt.Sprintf("RSI7: %.1f", data.RSI7Values[len(data.RSI7Values)-1]))
+		}
+		if len(data.RSI14Values) > 0 {
+			parts = append(parts, fmt.Sprintf("RSI14: %.1f", data.RSI14Values[len(data.RSI14Values)-1]))
+		}
+		if data.ATR14 > 0 {
+			parts = append(parts, fmt.Sprintf("ATR14: %s", formatPriceSmart(data.ATR14)))
+		}
+		if len(data.MACDValues) > 0 {
+			parts = append(parts, fmt.Sprintf("MACD: %s", formatPriceSmart(data.MACDValues[len(data.MACDValues)-1])))
+		}
+		if len(data.EMA20Values) > 0 {
+			parts = append(parts, fmt.Sprintf("EMA20: %s", formatPriceSmart(data.EMA20Values[len(data.EMA20Values)-1])))
+		}
+		if len(data.EMA50Values) > 0 {
+			parts = append(parts, fmt.Sprintf("EMA50: %s", formatPriceSmart(data.EMA50Values[len(data.EMA50Values)-1])))
+		}
+		if len(data.BOLLUpper) > 0 && len(data.BOLLLower) > 0 {
+			parts = append(parts, fmt.Sprintf("BOLL up/low: %s / %s",
+				formatPriceSmart(data.BOLLUpper[len(data.BOLLUpper)-1]),
+				formatPriceSmart(data.BOLLLower[len(data.BOLLLower)-1])))
+		}
+		sb.WriteString(strings.Join(parts, " | ") + "\n\n")
+	}
 	return sb.String()
 }
 
@@ -615,7 +701,11 @@ func formatCandidateCoinsEN(ctx *Context) string {
 				sb.WriteString(fmt.Sprintf("Current Price: %s\n\n", formatPriceSmart(mdata.CurrentPrice)))
 
 				if mdata.TimeframeData != nil {
-					sb.WriteString(formatKlineDataEN(coin.Symbol, mdata.TimeframeData, ctx.Timeframes))
+					if ctx.ImageChartMode {
+						sb.WriteString(formatIndicatorSnapshotEN(coin.Symbol, mdata.TimeframeData, ctx.Timeframes))
+					} else {
+						sb.WriteString(formatKlineDataEN(coin.Symbol, mdata.TimeframeData, ctx.Timeframes))
+					}
 				}
 			}
 		}

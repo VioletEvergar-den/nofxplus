@@ -1793,7 +1793,7 @@ function ModelConfigModal({
   const [modelName, setModelName] = useState('')
   // 能力检测（结构化输出/工具调用/深度思考）
   const [probing, setProbing] = useState(false)
-  const [probedCaps, setProbedCaps] = useState<{ json_mode: boolean; tool_call: boolean; reasoning: boolean } | null>(null)
+  const [probedCaps, setProbedCaps] = useState<{ json_mode: boolean; tool_call: boolean; reasoning: boolean; vision: boolean } | null>(null)
   const [probeError, setProbeError] = useState('')
 
   // 获取当前编辑的模型信息 - 编辑时从已配置的模型中查找，新建时从所有支持的模型中查找
@@ -1805,7 +1805,7 @@ function ModelConfigModal({
   const savedCaps = useMemo(() => {
     if (!selectedModel?.capabilities) return null
     try {
-      return JSON.parse(selectedModel.capabilities) as { json_mode: boolean; tool_call: boolean; reasoning: boolean }
+      return JSON.parse(selectedModel.capabilities) as { json_mode: boolean; tool_call: boolean; reasoning: boolean; vision: boolean }
     } catch {
       return null
     }
@@ -2075,6 +2075,7 @@ function ModelConfigModal({
                       <CapTag on={caps?.json_mode} label={t('capJsonMode', language)} onColor="#0ECB81" />
                       <CapTag on={caps?.tool_call} label={t('capToolCall', language)} onColor="#F0B90B" />
                       <CapTag on={caps?.reasoning} label={t('capReasoning', language)} onColor="#60a5fa" />
+                      <CapTag on={caps?.vision} label={t('capVision', language)} onColor="#0ECB81" />
                     </div>
                     {probeError && (
                       <div className="text-xs mt-2" style={{ color: '#F6465D' }}>

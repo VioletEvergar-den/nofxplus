@@ -528,6 +528,7 @@ export const translations = {
     capJsonMode: 'Structured Output',
     capToolCall: 'Tool Calling',
     capReasoning: 'Deep Reasoning',
+    capVision: 'Vision',
     probeCapabilitiesHint:
       'Uses the saved config for probing. The council roundtable uses native tool calling when "Tool Calling" is supported, and falls back to the text protocol otherwise.',
     confirmDeleteModel:
@@ -1809,6 +1810,7 @@ export const translations = {
     capJsonMode: '结构化输出',
     capToolCall: '工具调用',
     capReasoning: '深度思考',
+    capVision: '视觉',
     probeCapabilitiesHint:
       '使用已保存的配置进行检测（改动请先保存）。专家团圆桌在模型支持「工具调用」时走原生 function calling，否则自动回退文本协议。',
     confirmDeleteModel: '确定要删除此AI模型配置吗？',
