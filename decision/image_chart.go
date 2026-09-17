@@ -231,7 +231,7 @@ func buildChartImageIntro(lang string, count int, listStr string) string {
 以下图片由程序根据真实行情数据渲染（币安深色配色）：
 - **红色蜡烛 = 阳线（收涨），绿色蜡烛 = 阴线（收跌）**（UP=RED, DOWN=GREEN）
 - 主图：蜡烛 + EMA20（琥珀色） + EMA50（紫色） + 布林带（灰色），主图内白色文字标注了图中最高价（H=）与最低价（L=），持仓币种白色虚线为进场价（ENTRY）
-- 中部副图：成交量（右轴有最大量/半量刻度）；底部副图：MACD（青色线，绕零轴，右轴有 ±峰值刻度）
+- 中部副图：成交量（右轴有最大量/半量刻度）；底部副图：MACD（DIF 青色线 + DEA 琥珀线 + 红绿柱，正柱红负柱绿，左上角标注 DIF/DEA 最新精确值）
 - 右侧图例写有 EMA20 / EMA50 / BOLL 上中下轨的**最新精确数值**，右轴为价格刻度
 - 多张图片对应不同时间框架（每张图标题含币种与周期），请逐张做周期对比
 
@@ -248,7 +248,7 @@ CHART_READING: trend=<up|down|flat>; ema20_vs_ema50=<above|below>; volume=<expan
 The following images are rendered by the program from real market data (Binance dark theme):
 - **Red candle = bullish (close up), green candle = bearish (close down)** (UP=RED, DOWN=GREEN)
 - Main pane: candles + EMA20 (amber) + EMA50 (purple) + Bollinger Bands (gray); white text marks the highest price (H=) and lowest price (L=) in the chart; for held positions the white dashed line marks the entry price (ENTRY)
-- Middle pane: volume (right axis shows max/half-volume ticks); bottom pane: MACD (teal line, around zero axis, right axis shows +/- peak ticks)
+- Middle pane: volume (right axis shows max/half-volume ticks); bottom pane: MACD (DIF teal line + DEA amber line + red/green histogram, positive bars red and negative bars green, top-left shows latest exact DIF/DEA values)
 - The legend on the right shows the **latest exact values** of EMA20 / EMA50 / BOLL upper/middle/lower; the right axis is the price scale
 - Multiple images correspond to different timeframes (each image title contains symbol and timeframe); compare across timeframes one by one
 

@@ -304,24 +304,58 @@ func Render(s Series) ([]byte, error) {
 		}
 	}
 
-	// ---- MACD 副图（对称零轴折线）----
+	// ---- MACD 副图（标准 DIF + DEA + 柱）----
 	hline(img, 0, imgW, macdTop-8, colSep)
-	d.text(plotX0+2, macdTop-6, "MACD", 1, colTextDim)
+	dif, dea, hist := computeMACD(candles)
 	macdMax := 0.0
-	for _, v := range s.MACD {
-		if isFinite(v) {
-			macdMax = math.Max(macdMax, math.Abs(v))
+	for i := 0; i < n; i++ {
+		if isFinite(dif[i]) {
+			macdMax = math.Max(macdMax, math.Abs(dif[i]))
+		}
+		if isFinite(dea[i]) {
+			macdMax = math.Max(macdMax, math.Abs(dea[i]))
+		}
+		if isFinite(hist[i]) {
+			macdMax = math.Max(macdMax, math.Abs(hist[i]))
 		}
 	}
 	if macdMax > 0 {
 		ms := priceScaler{pmin: -macdMax, pmax: macdMax, yTop: macdTop + 2, yBot: macdBot - 2}
 		mid := (macdTop + macdBot) / 2
 		hline(img, plotX0, plotX1, mid, colSep)
-		drawLineSeriesRaw(d, s.MACD, n, plotX0, plotX1, slot, ms, colMACD)
+		// 柱状图：(DIF-DEA)*2，正值红、负值绿
+		y0 := ms.priceToY(0)
+		for i := 0; i < n; i++ {
+			if !isFinite(hist[i]) || hist[i] == 0 {
+				continue
+			}
+			cx := int(float64(plotX0) + (float64(i)+0.5)*slot)
+			y1 := ms.priceToY(hist[i])
+			top, bot := y0, y1
+			if top > bot {
+				top, bot = bot, top
+			}
+			col := colUp
+			if hist[i] < 0 {
+				col = colDown
+			}
+			for xx := cx - bodyW/2; xx <= cx+bodyW/2; xx++ {
+				for yy := top; yy <= bot; yy++ {
+					if yy >= macdTop+2 && yy <= macdBot-2 {
+						img.Set(xx, yy, col)
+					}
+				}
+			}
+		}
+		// DEA（琥珀）与 DIF（青色）双线
+		drawLineSeriesRaw(d, dea, n, plotX0, plotX1, slot, ms, colEMA20)
+		drawLineSeriesRaw(d, dif, n, plotX0, plotX1, slot, ms, colMACD)
 		// 右轴纵坐标：+峰值 / 0 / -峰值
 		d.text(imgW-axisW+6, macdTop+4, "+"+fmtIndicator(macdMax), 2, colTextDim)
 		d.text(imgW-axisW+6, mid-charH, "0", 2, colTextDim)
 		d.text(imgW-axisW+6, macdBot-2*charH-2, "-"+fmtIndicator(macdMax), 2, colTextDim)
+		// 左上角标注 DIF/DEA 最新精确值
+		d.text(plotX0+2, macdTop-6, fmt.Sprintf("MACD DIF=%s DEA=%s", fmtIndicator(dif[n-1]), fmtIndicator(dea[n-1])), 1, colText)
 	}
 
 	// ---- 时间轴 ----
@@ -630,6 +664,36 @@ func fmtIndicator(v float64) string {
 	default:
 		return strconv.FormatFloat(v, 'f', 8, 64)
 	}
+}
+
+// computeMACD 从收盘价自算标准 MACD 三件套：
+// DIF = EMA12 - EMA26，DEA = DIF 的 EMA9，柱 = (DIF - DEA) * 2
+// 全序列有效（EMA 以首根收盘价为初值），与常见行情软件口径一致
+func computeMACD(candles []Candle) (dif, dea, hist []float64) {
+	n := len(candles)
+	dif = make([]float64, n)
+	dea = make([]float64, n)
+	hist = make([]float64, n)
+	if n == 0 {
+		return
+	}
+	k12, k26, k9 := 2.0/13.0, 2.0/27.0, 2.0/10.0
+	ema12, ema26 := candles[0].Close, candles[0].Close
+	prevDea := 0.0
+	for i, c := range candles {
+		if i > 0 {
+			ema12 = c.Close*k12 + ema12*(1-k12)
+			ema26 = c.Close*k26 + ema26*(1-k26)
+			dif[i] = ema12 - ema26
+			dea[i] = dif[i]*k9 + prevDea*(1-k9)
+			prevDea = dea[i]
+		} else {
+			dif[i] = 0
+			dea[i] = 0
+		}
+		hist[i] = (dif[i] - dea[i]) * 2
+	}
+	return
 }
 
 // sanitizeASCII 将非支持字符替换为 '?'（内置字体仅支持 ASCII 子集）
