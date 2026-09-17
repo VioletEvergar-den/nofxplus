@@ -147,11 +147,12 @@ func renderSymbolChart(symbol string, mdata *market.Data, timeframe string, tfDa
 // buildImageChartParts 构造多模态 user 消息：
 // 文本 part = userPrompt（图片模式已精简K线表）+ 图表说明 + 图片清单 + 读图指令
 // 图片 part = 每个币种一张 PNG
+// 返回值：parts（发送给AI）、fullText（实际发送的完整文本，含图表说明块，用于前端展示）、imageURLs（PNG data URL 列表，用于前端展示）
 // 全部币种渲染失败时返回 error，调用方回退纯文字模式
-func buildImageChartParts(ctx *Context, userPrompt, primaryTF, lang string) ([]mcp.ContentPart, error) {
+func buildImageChartParts(ctx *Context, userPrompt, primaryTF, lang string) ([]mcp.ContentPart, string, []string, error) {
 	symbols := selectImageChartSymbols(ctx, maxImageCharts)
 	if len(symbols) == 0 {
-		return nil, fmt.Errorf("无可渲染币种（无持仓且无候选币）")
+		return nil, "", nil, fmt.Errorf("无可渲染币种（无持仓且无候选币）")
 	}
 
 	type renderedChart struct {
@@ -186,7 +187,7 @@ func buildImageChartParts(ctx *Context, userPrompt, primaryTF, lang string) ([]m
 		})
 	}
 	if len(charts) == 0 {
-		return nil, fmt.Errorf("所有币种K线渲染失败")
+		return nil, "", nil, fmt.Errorf("所有币种K线渲染失败")
 	}
 
 	// 图片清单
@@ -199,10 +200,12 @@ func buildImageChartParts(ctx *Context, userPrompt, primaryTF, lang string) ([]m
 
 	parts := make([]mcp.ContentPart, 0, len(charts)+1)
 	parts = append(parts, mcp.NewTextPart(text))
+	imageURLs := make([]string, 0, len(charts))
 	for _, c := range charts {
 		parts = append(parts, mcp.NewImagePart(c.dataURL))
+		imageURLs = append(imageURLs, c.dataURL)
 	}
-	return parts, nil
+	return parts, text, imageURLs, nil
 }
 
 // buildChartImageIntro 图表说明 + 图片清单 + 读图指令（双语）

@@ -892,6 +892,7 @@ func (at *AutoTrader) runCycle() error {
 		record.InputPrompt = aiDecision.UserPrompt
 		record.CoTTrace = aiDecision.CoTTrace
 		record.RawResponse = aiDecision.RawResponse // Save raw AI response for debugging
+		record.ChartImages = aiDecision.ChartImages // K线图片模式渲染图（data URL），供前端展示
 		if len(aiDecision.Decisions) > 0 {
 			at.complianceTracker.CheckCompliance(at.callCount, &aiDecision.Decisions[0], at.lastFeedback)
 			decisionJSON, _ := json.MarshalIndent(aiDecision.Decisions, "", "  ")

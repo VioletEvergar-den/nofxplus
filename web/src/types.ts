@@ -85,6 +85,7 @@ export interface DecisionRecord {
   execution_log: string[]
   success: boolean
   error_message?: string
+  chart_images?: string[]
 }
 
 export interface Statistics {

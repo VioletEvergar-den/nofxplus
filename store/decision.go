@@ -28,6 +28,7 @@ type DecisionRecord struct {
 	Success             bool               `json:"success"`
 	ErrorMessage        string             `json:"error_message"`
 	AIRequestDurationMs int64              `json:"ai_request_duration_ms"`
+	ChartImages         []string           `json:"chart_images"` // 图片模式渲染的K线PNG（data URL），仅最近记录携带
 	AccountState        AccountSnapshot    `json:"account_state"`
 	Positions           []PositionSnapshot `json:"positions"`
 	Decisions           []DecisionAction   `json:"decisions"`
@@ -101,6 +102,7 @@ func (s *DecisionStore) initTables() error {
 			success BOOLEAN DEFAULT 0,
 			error_message TEXT DEFAULT '',
 			ai_request_duration_ms INTEGER DEFAULT 0,
+			chart_images TEXT DEFAULT '[]',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		// Indexes
@@ -120,6 +122,9 @@ func (s *DecisionStore) initTables() error {
 	// Migration: add decisions column if not exists
 	_, _ = s.db.Exec(`ALTER TABLE decision_records ADD COLUMN decisions TEXT DEFAULT '[]'`)
 
+	// Migration: add chart_images column if not exists (K线图片模式渲染图)
+	_, _ = s.db.Exec(`ALTER TABLE decision_records ADD COLUMN chart_images TEXT DEFAULT '[]'`)
+
 	return nil
 }
 
@@ -135,19 +140,21 @@ func (s *DecisionStore) LogDecision(record *DecisionRecord) error {
 	candidateCoinsJSON, _ := json.Marshal(record.CandidateCoins)
 	executionLogJSON, _ := json.Marshal(record.ExecutionLog)
 	decisionsJSON, _ := json.Marshal(record.Decisions)
+	chartImagesJSON, _ := json.Marshal(record.ChartImages)
 
 	// Insert decision record main table (only save AI decision related content)
 	result, err := s.db.Exec(`
 		INSERT INTO decision_records (
 			trader_id, cycle_number, timestamp, system_prompt, input_prompt,
 			cot_trace, decision_json, raw_response, candidate_coins, execution_log,
-			decisions, success, error_message, ai_request_duration_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			decisions, success, error_message, ai_request_duration_ms, chart_images
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.TraderID, record.CycleNumber, record.Timestamp.Format(time.RFC3339),
 		record.SystemPrompt, record.InputPrompt, record.CoTTrace, record.DecisionJSON,
 		record.RawResponse, string(candidateCoinsJSON), string(executionLogJSON),
 		string(decisionsJSON), record.Success, record.ErrorMessage, record.AIRequestDurationMs,
+		string(chartImagesJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert decision record: %w", err)
@@ -167,7 +174,7 @@ func (s *DecisionStore) GetLatestRecords(traderID string, n int) ([]*DecisionRec
 	rows, err := s.db.Query(`
 		SELECT id, trader_id, cycle_number, timestamp, system_prompt, input_prompt,
 			   cot_trace, decision_json, candidate_coins, execution_log,
-			   COALESCE(decisions, '[]'), success, error_message, ai_request_duration_ms
+			   COALESCE(decisions, '[]'), COALESCE(chart_images, '[]'), success, error_message, ai_request_duration_ms
 		FROM decision_records
 		WHERE trader_id = ?
 		ORDER BY timestamp DESC
@@ -207,7 +214,7 @@ func (s *DecisionStore) GetAllLatestRecords(n int) ([]*DecisionRecord, error) {
 	rows, err := s.db.Query(`
 		SELECT id, trader_id, cycle_number, timestamp, system_prompt, input_prompt,
 			   cot_trace, decision_json, candidate_coins, execution_log,
-			   COALESCE(decisions, '[]'), success, error_message, ai_request_duration_ms
+			   COALESCE(decisions, '[]'), COALESCE(chart_images, '[]'), success, error_message, ai_request_duration_ms
 		FROM decision_records
 		ORDER BY timestamp DESC
 		LIMIT ?
@@ -243,7 +250,7 @@ func (s *DecisionStore) GetRecordsByDate(traderID string, date time.Time) ([]*De
 	rows, err := s.db.Query(`
 		SELECT id, trader_id, cycle_number, timestamp, system_prompt, input_prompt,
 			   cot_trace, decision_json, candidate_coins, execution_log,
-			   COALESCE(decisions, '[]'), success, error_message, ai_request_duration_ms
+			   COALESCE(decisions, '[]'), COALESCE(chart_images, '[]'), success, error_message, ai_request_duration_ms
 		FROM decision_records
 		WHERE trader_id = ? AND DATE(timestamp) = ?
 		ORDER BY timestamp ASC
@@ -354,13 +361,13 @@ func (s *DecisionStore) GetLastCycleNumber(traderID string) (int, error) {
 func (s *DecisionStore) scanDecisionRecord(rows *sql.Rows) (*DecisionRecord, error) {
 	var record DecisionRecord
 	var timestampStr string
-	var candidateCoinsJSON, executionLogJSON, decisionsJSON string
+	var candidateCoinsJSON, executionLogJSON, decisionsJSON, chartImagesJSON string
 
 	err := rows.Scan(
 		&record.ID, &record.TraderID, &record.CycleNumber, &timestampStr,
 		&record.SystemPrompt, &record.InputPrompt, &record.CoTTrace,
 		&record.DecisionJSON, &candidateCoinsJSON, &executionLogJSON,
-		&decisionsJSON, &record.Success, &record.ErrorMessage, &record.AIRequestDurationMs,
+		&decisionsJSON, &chartImagesJSON, &record.Success, &record.ErrorMessage, &record.AIRequestDurationMs,
 	)
 	if err != nil {
 		return nil, err
@@ -370,6 +377,7 @@ func (s *DecisionStore) scanDecisionRecord(rows *sql.Rows) (*DecisionRecord, err
 	_ = json.Unmarshal([]byte(candidateCoinsJSON), &record.CandidateCoins)
 	_ = json.Unmarshal([]byte(executionLogJSON), &record.ExecutionLog)
 	_ = json.Unmarshal([]byte(decisionsJSON), &record.Decisions)
+	_ = json.Unmarshal([]byte(chartImagesJSON), &record.ChartImages)
 
 	return &record, nil
 }

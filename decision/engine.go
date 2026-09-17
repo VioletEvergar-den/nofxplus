@@ -213,6 +213,7 @@ type FullDecision struct {
 	Timestamp           time.Time     `json:"timestamp"`
 	AIRequestDurationMs int64         `json:"ai_request_duration_ms,omitempty"`
 	ChartReading        *ChartReading `json:"chart_reading,omitempty"` // 图片模式下模型对K线图的复述（程序判卷用）
+	ChartImages         []string      `json:"chart_images,omitempty"`  // 图片模式渲染的K线PNG（data URL），仅用于前端展示
 }
 
 // QuantData quantitative data structure (fund flow, position changes, price changes)
@@ -335,13 +336,18 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 	var aiResponse string
 	var aiErr error
 	imageModeUsed := false
+	var chartImages []string // 图片模式渲染的K线PNG（data URL），随决策记录返回前端展示
 	if ctx.ImageChartMode && !isVisionUnsupported(mcpClient) {
-		if parts, perr := buildImageChartParts(ctx, userPrompt, primaryTF, lang); perr != nil {
+		parts, fullText, imageURLs, perr := buildImageChartParts(ctx, userPrompt, primaryTF, lang)
+		if perr != nil {
 			logger.Infof("📈 [图片模式] 渲染失败，回退文字模式: %v", perr)
 		} else {
 			if resp, cerr := mcpClient.CallWithMessagesWithImages(systemPrompt, parts); cerr == nil {
 				aiResponse = resp
 				imageModeUsed = true
+				// 前端展示：User Prompt 显示实际发送的完整文本（含图表说明块），并附带渲染图片
+				userPrompt = fullText
+				chartImages = imageURLs
 				logger.Infof("📈 [图片模式] 多模态调用成功，共 %d 张K线图", len(parts)-1)
 			} else {
 				logger.Infof("📈 [图片模式] 多模态调用失败（可能不支持视觉），标记并回退文字模式: %v", cerr)
@@ -373,6 +379,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 		decision.UserPrompt = userPrompt
 		decision.AIRequestDurationMs = aiCallDuration.Milliseconds()
 		decision.RawResponse = aiResponse
+		decision.ChartImages = chartImages
 		if imageModeUsed {
 			decision.ChartReading = extractChartReading(aiResponse)
 			gradeImageChartReadings(decision, ctx, primaryTF)

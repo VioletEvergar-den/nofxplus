@@ -2897,7 +2897,19 @@ func (s *Server) handleDecisions(c *gin.Context) {
 		return
 	}
 
+	trimChartImages(records, 3)
+
 	c.JSON(http.StatusOK, records)
+}
+
+// trimChartImages 限制携带K线渲染图（data URL，单张可达百KB级）的记录数量：
+// 仅最近 keepN 条保留 chart_images，其余置空，避免决策列表 API 响应体过大
+func trimChartImages(records []*store.DecisionRecord, keepN int) {
+	for i, r := range records {
+		if i >= keepN {
+			r.ChartImages = nil
+		}
+	}
 }
 
 // handleLatestDecisions Latest decision logs (newest first, supports limit parameter)
@@ -2963,6 +2975,9 @@ func (s *Server) handleLatestDecisions(c *gin.Context) {
 	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
 		records[i], records[j] = records[j], records[i]
 	}
+
+	// 仅最新3条携带K线渲染图（records 已 newest-first）
+	trimChartImages(records, 3)
 
 	c.JSON(http.StatusOK, records)
 }

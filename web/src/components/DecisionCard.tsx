@@ -403,6 +403,20 @@ export const DecisionCard = memo(function DecisionCard({ decision, language, onS
                 }}
               >
                 {decision.input_prompt}
+                {decision.chart_images && decision.chart_images.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    {decision.chart_images.map((img, idx) => (
+                      <img
+                        key={idx}
+                        src={img}
+                        alt={`K线图 ${idx + 1}`}
+                        className="w-full rounded-md cursor-zoom-in"
+                        style={{ border: '1px solid #2B3139' }}
+                        onClick={() => window.open(img, '_blank')}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
