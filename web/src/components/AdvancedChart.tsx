@@ -442,50 +442,68 @@ export function AdvancedChart({
 
     // 价格轴滚轮垂直缩放：鼠标悬停在右侧价格轴（主图区域）时滚轮缩放价格范围
     const chartEl = chartContainerRef.current
-    const handlePriceAxisWheel = (e: WheelEvent) => {
+    // 判定鼠标是否位于右侧价格轴（主图区域）
+    const isOverPriceAxis = (clientX: number, clientY: number) => {
+      if (!chartEl) return false
       const c = chartRef.current
-      const series = candlestickSeriesRef.current
-      if (!c || !series || !chartEl) return
+      if (!c) return false
       const rect = chartEl.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      const y = e.clientY - rect.top
+      const x = clientX - rect.left
+      const y = clientY - rect.top
       let axisWidth = 60
       try {
         axisWidth = c.priceScale('right').width() || 60
       } catch { /* 默认值兜底 */ }
-      if (x < rect.width - axisWidth) return // 不在价格轴区域，走默认缩放
+      if (x < rect.width - axisWidth) return false
       const mainPaneHeight = c.panes()[0]?.getHeight() ?? rect.height
-      if (y > mainPaneHeight) return // 副图区域不做主图缩放
+      return y <= mainPaneHeight
+    }
+    // 立即触发价格轴重算：v5 的 applyOptions 对 autoscaleInfoProvider 变更不会主动重算缩放，
+    // 需通过 update 最后一根K线强制图表重新走 autoscale 流程（provider 读取手动区间 ref）
+    const triggerAutoscaleRecalc = () => {
+      const series = candlestickSeriesRef.current
+      const snapshot = lastKlineDataRef.current
+      if (series && snapshot.length > 0) {
+        try { series.update(snapshot[snapshot.length - 1] as any) } catch { /* 忽略 */ }
+      }
+    }
+    const handlePriceAxisWheel = (e: WheelEvent) => {
+      const c = chartRef.current
+      const series = candlestickSeriesRef.current
+      if (!c || !series || !chartEl) return
+      if (!isOverPriceAxis(e.clientX, e.clientY)) return // 不在价格轴区域，走默认缩放
       e.preventDefault()
       e.stopImmediatePropagation()
 
-      const top = series.coordinateToPrice(0) as any
-      const bottom = series.coordinateToPrice(mainPaneHeight) as any
-      if (top == null || bottom == null || !isFinite(top) || !isFinite(bottom)) return
+      const rect = chartEl.getBoundingClientRect()
+      const y = e.clientY - rect.top
+      const mainPaneHeight = c.panes()[0]?.getHeight() ?? rect.height
+      const top = series.coordinateToPrice(0) as any // 主图顶部对应价格（最大值）
+      const bottom = series.coordinateToPrice(mainPaneHeight) as any // 主图底部对应价格（最小值）
+      if (top == null || bottom == null || !isFinite(top) || !isFinite(bottom) || top <= bottom) return
       const anchor = series.coordinateToPrice(y) as any
       const anchorPrice = anchor != null && isFinite(anchor) ? anchor : (top + bottom) / 2
-      // 向上滚 = 拉伸放大（范围缩小），向下滚 = 压缩缩小
-      const factor = e.deltaY < 0 ? 0.85 : 1.15
+      // 向上滚 = 拉伸放大（范围缩小），向下滚 = 压缩缩小；deltaMode=1 为行模式需换算成像素
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY
+      const factor = dy < 0 ? 0.85 : 1.15
       const newMin = anchorPrice + (bottom - anchorPrice) * factor
       const newMax = anchorPrice + (top - anchorPrice) * factor
       if (!isFinite(newMin) || !isFinite(newMax) || newMax <= newMin) return
       manualPriceRangeRef.current = { min: newMin, max: newMax }
-      // 重新应用 provider 触发图表重算缩放
-      series.applyOptions({
-        autoscaleInfoProvider: (base: any) => {
-          if (manualPriceRangeRef.current) {
-            return {
-              priceRange: {
-                minValue: manualPriceRangeRef.current.min,
-                maxValue: manualPriceRangeRef.current.max,
-              },
-            }
-          }
-          return base()
-        },
-      } as any)
+      triggerAutoscaleRecalc()
+    }
+    // 双击价格轴恢复自动缩放
+    const handlePriceAxisDblClick = (e: MouseEvent) => {
+      const series = candlestickSeriesRef.current
+      if (!series || !chartEl) return
+      if (!isOverPriceAxis(e.clientX, e.clientY)) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      manualPriceRangeRef.current = null
+      triggerAutoscaleRecalc()
     }
     chartEl?.addEventListener('wheel', handlePriceAxisWheel, { capture: true, passive: false })
+    chartEl?.addEventListener('dblclick', handlePriceAxisDblClick, { capture: true })
 
     // 响应式调整
     const handleResize = () => {
@@ -532,6 +550,7 @@ export function AdvancedChart({
     return () => {
       window.removeEventListener('resize', handleResize)
       chartEl?.removeEventListener('wheel', handlePriceAxisWheel, { capture: true } as any)
+      chartEl?.removeEventListener('dblclick', handlePriceAxisDblClick, { capture: true } as any)
       chart.remove()
     }
   }, [height])

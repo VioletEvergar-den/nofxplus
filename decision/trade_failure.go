@@ -548,7 +548,7 @@ func generateDetailedNotes(reason TradeFailureReason, order *RecentOrder, eviden
 		return fmt.Sprintf("Trade lost momentum during execution. Volume declined %.1f%% and OI fell %.1f%%, indicating lack of follow-through and weakening conviction from other traders.", order.VolumeDeltaDuringTrade*100, order.OIDeltaDuringTrade*100)
 
 	case ReasonLiquidityDried:
-		return fmt.Sprintf("Liquidity evaporated during the trade. Bid-ask spread widened %.1fx (from %.3f to %.3f) and available depth fell %.1f%% (from $%.0f to $%.0f). Execution became difficult.", order.ExitSpread/order.EntrySpread, order.EntrySpread, order.ExitSpread, (1-order.ExitDepth/order.EntryDepth)*100, order.EntryDepth, order.ExitDepth)
+		return fmt.Sprintf("Liquidity evaporated during the trade. Bid-ask spread widened %.1fx (from %s to %s) and available depth fell %.1f%% (from $%.0f to $%.0f). Execution became difficult.", order.ExitSpread/order.EntrySpread, formatPriceSmart(order.EntrySpread), formatPriceSmart(order.ExitSpread), (1-order.ExitDepth/order.EntryDepth)*100, order.EntryDepth, order.ExitDepth)
 
 	case ReasonStopHitRegimeChange:
 		return fmt.Sprintf("Unfavorable regime during trade. Trend strength was %.2f and market regime '%s' with chop score %.2f. Stop likely hit due to regime risk, not just tight positioning.", order.TrendStrength, order.MarketRegime, order.ChopScore)
@@ -564,7 +564,7 @@ func generateDetailedNotes(reason TradeFailureReason, order *RecentOrder, eviden
 		if v > 10 {
 			v = v / 100.0
 		}
-		return fmt.Sprintf("Execution slippage was excessive (%.2f%%) for market conditions. Volatility was '%s', volume was %.0f%% of baseline, and spread was %.3f. Either order was too large or timed poorly.", order.EntrySlippage*100, order.VolatilityRegime, v*100, order.EntrySpread)
+		return fmt.Sprintf("Execution slippage was excessive (%.2f%%) for market conditions. Volatility was '%s', volume was %.0f%% of baseline, and spread was %s. Either order was too large or timed poorly.", order.EntrySlippage*100, order.VolatilityRegime, v*100, formatPriceSmart(order.EntrySpread))
 
 	case ReasonFundingDrag:
 		totalCost := evidence["total_cost"].(float64)

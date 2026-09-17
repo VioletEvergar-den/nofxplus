@@ -2,12 +2,30 @@ package decision
 
 import (
 	"fmt"
+	"math"
 	"nofx/market"
 	"nofx/store"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// formatPriceSmart 根据数值量级自适应小数位，避免小价格币种（如 DOGE 0.08x）被固定位数抹平
+// ≥100: 2 位；1~100: 4 位；0.01~1: 5 位；<0.01: 6 位（自动处理负数，适用于 MACD 等可负指标）
+func formatPriceSmart(v float64) string {
+	abs := math.Abs(v)
+	switch {
+	case abs >= 100:
+		return strconv.FormatFloat(v, 'f', 2, 64)
+	case abs >= 1:
+		return strconv.FormatFloat(v, 'f', 4, 64)
+	case abs >= 0.01:
+		return strconv.FormatFloat(v, 'f', 5, 64)
+	default:
+		return strconv.FormatFloat(v, 'f', 6, 64)
+	}
+}
 
 // ============================================================================
 // AI Data Formatter - AI数据格式化器
@@ -51,12 +69,12 @@ func formatRecentTradesZH(orders []RecentOrder) string {
 			profitOrLoss = "亏损"
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s %s | 进场 %.3f 出场 %.3f | %s: %+.2f USDT (%+.2f%%) | %s → %s (%s)\n",
+		sb.WriteString(fmt.Sprintf("%d. %s %s | 进场 %s 出场 %s | %s: %+.2f USDT (%+.2f%%) | %s → %s (%s)\n",
 			i+1,
 			order.Symbol,
 			order.Side,
-			order.EntryPrice,
-			order.ExitPrice,
+			formatPriceSmart(order.EntryPrice),
+			formatPriceSmart(order.ExitPrice),
 			profitOrLoss,
 			order.RealizedPnL,
 			order.PnLPct,
@@ -80,7 +98,7 @@ func formatCurrentPositionsZH(strategy_config *store.StrategyConfig, ctx *Contex
 		drawdown := pos.UnrealizedPnLPct - pos.PeakPnLPct
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s | ", i+1, pos.Symbol, strings.ToUpper(pos.Side)))
-		sb.WriteString(fmt.Sprintf("进场 %.3f 当前 %.3f | ", pos.EntryPrice, pos.MarkPrice))
+		sb.WriteString(fmt.Sprintf("进场 %s 当前 %s | ", formatPriceSmart(pos.EntryPrice), formatPriceSmart(pos.MarkPrice)))
 		sb.WriteString(fmt.Sprintf("数量 %.3f | ", pos.Quantity))
 		sb.WriteString(fmt.Sprintf("仓位价值 %.2f USDT | ", pos.Quantity*pos.MarkPrice))
 		sb.WriteString(fmt.Sprintf("盈亏 %+.2f%% | ", pos.UnrealizedPnLPct))
@@ -88,7 +106,7 @@ func formatCurrentPositionsZH(strategy_config *store.StrategyConfig, ctx *Contex
 		sb.WriteString(fmt.Sprintf("峰值盈亏 %.2f%% | ", pos.PeakPnLPct))
 		sb.WriteString(fmt.Sprintf("杠杆 %dx | ", pos.Leverage))
 		sb.WriteString(fmt.Sprintf("保证金 %.0f USDT | ", pos.MarginUsed))
-		sb.WriteString(fmt.Sprintf("强平价 %.3f\n", pos.LiquidationPrice))
+		sb.WriteString(fmt.Sprintf("强平价 %s\n", formatPriceSmart(pos.LiquidationPrice)))
 
 		// 添加分析提示
 		if drawdown < -0.30*pos.PeakPnLPct && pos.PeakPnLPct > 0.02 {
@@ -138,7 +156,7 @@ func formatCandidateCoinsZH(ctx *Context) string {
 		// 当前价格
 		if ctx.MarketDataMap != nil {
 			if mdata, ok := ctx.MarketDataMap[coin.Symbol]; ok {
-				sb.WriteString(fmt.Sprintf("当前价格: %.3f\n\n", mdata.CurrentPrice))
+				sb.WriteString(fmt.Sprintf("当前价格: %s\n\n", formatPriceSmart(mdata.CurrentPrice)))
 
 				// K线数据（多时间框架）
 				if mdata.TimeframeData != nil {
@@ -177,12 +195,12 @@ func formatKlineDataZH(symbol string, tfData map[string]*market.TimeframeSeriesD
 			for i := startIdx; i < len(data.Klines); i++ {
 				k := data.Klines[i]
 				t := time.UnixMilli(k.Time).UTC()
-				sb.WriteString(fmt.Sprintf("%s    %.3f    %.3f    %.3f    %.3f    %.2f\n",
+				sb.WriteString(fmt.Sprintf("%s    %s    %s    %s    %s    %.2f\n",
 					t.Format("01-02 15:04"),
-					k.Open,
-					k.High,
-					k.Low,
-					k.Close,
+					formatPriceSmart(k.Open),
+					formatPriceSmart(k.High),
+					formatPriceSmart(k.Low),
+					formatPriceSmart(k.Close),
 					k.Volume,
 				))
 			}
@@ -226,7 +244,7 @@ func formatIndicatorSeriesZH(sb *strings.Builder, data *market.TimeframeSeriesDa
 		wrote = true
 	}
 	if data.ATR14 > 0 {
-		sb.WriteString(fmt.Sprintf("ATR14: %.3f\n", data.ATR14))
+		sb.WriteString(fmt.Sprintf("ATR14: %s\n", formatPriceSmart(data.ATR14)))
 		wrote = true
 	}
 	if len(data.BOLLUpper) > 0 {
@@ -249,9 +267,9 @@ func formatMarketDataZH(strategy_config *store.StrategyConfig, data *market.Data
 	var sb strings.Builder
 	sb.WriteString("## 📈 市场数据概览\n\n")
 	sb.WriteString(fmt.Sprintf("### %s 市场数据\n\n", data.Symbol))
-	sb.WriteString(fmt.Sprintf("   📈 当前价格: %.3f\n", data.CurrentPrice))
-	sb.WriteString(fmt.Sprintf(",  📈 当前EMA20: %.3f\n", data.CurrentEMA20))
-	sb.WriteString(fmt.Sprintf(",  📈 当前MACD: %.3f\n", data.CurrentMACD))
+	sb.WriteString(fmt.Sprintf("   📈 当前价格: %s\n", formatPriceSmart(data.CurrentPrice)))
+	sb.WriteString(fmt.Sprintf(",  📈 当前EMA20: %s\n", formatPriceSmart(data.CurrentEMA20)))
+	sb.WriteString(fmt.Sprintf(",  📈 当前MACD: %s\n", formatPriceSmart(data.CurrentMACD)))
 	sb.WriteString(fmt.Sprintf(",  📈 当前RSI7: %.3f\n", data.CurrentRSI7))
 	sb.WriteString("\n\n")
 	if len(data.TimeframeData) > 0 {
@@ -285,15 +303,15 @@ func formatMarketDataZH(strategy_config *store.StrategyConfig, data *market.Data
 				sb.WriteString(fmt.Sprintf("成交量: %s\n\n", formatFloatSlice(data.IntradaySeries.Volume)))
 			}
 			if data.IntradaySeries.ATR14 > 0 {
-				sb.WriteString(fmt.Sprintf("3m ATR (14期): %.3f\n\n", data.IntradaySeries.ATR14))
+				sb.WriteString(fmt.Sprintf("3m ATR (14期): %s\n\n", formatPriceSmart(data.IntradaySeries.ATR14)))
 			}
 		}
 		if data.LongerTermContext != nil {
 			sb.WriteString("### 📊 更长期市场背景\n\n")
 			sb.WriteString(fmt.Sprintf("更长期时间框架 (%s):\n\n", strategy_config.Indicators.Klines.LongerTimeframe))
-			sb.WriteString((fmt.Sprintf("EMA20 : %3.f vs. EMA50: %3f\n\n", data.LongerTermContext.EMA20, data.LongerTermContext.EMA50)))
-			sb.WriteString((fmt.Sprintf("3期ATR : %3.f vs. 14期ATR: %3f\n\n", data.LongerTermContext.ATR3, data.LongerTermContext.ATR14)))
-			sb.WriteString((fmt.Sprintf("当前成交量 : %3.f vs. 平均成交量: %3f\n\n", data.LongerTermContext.CurrentVolume, data.LongerTermContext.AverageVolume)))
+			sb.WriteString(fmt.Sprintf("EMA20: %s vs. EMA50: %s\n\n", formatPriceSmart(data.LongerTermContext.EMA20), formatPriceSmart(data.LongerTermContext.EMA50)))
+			sb.WriteString(fmt.Sprintf("3期ATR: %s vs. 14期ATR: %s\n\n", formatPriceSmart(data.LongerTermContext.ATR3), formatPriceSmart(data.LongerTermContext.ATR14)))
+			sb.WriteString(fmt.Sprintf("当前成交量: %.0f vs. 平均成交量: %.0f\n\n", data.LongerTermContext.CurrentVolume, data.LongerTermContext.AverageVolume))
 			if len(data.LongerTermContext.MACDValues) > 0 {
 				sb.WriteString((fmt.Sprintf("MACD指标 : %s\n\n", formatFloatSlice(data.LongerTermContext.MACDValues))))
 			}
@@ -377,8 +395,8 @@ func formatTimeframeSeriesDataZH(sb *strings.Builder, data *market.TimeframeSeri
 			if i == len(data.Klines)-1 {
 				marker = "  <- 当前"
 			}
-			sb.WriteString(fmt.Sprintf("%-14s %-9.3f %-9.3f %-9.3f %-9.3f %-12.2f%s\n",
-				timeStr, k.Open, k.High, k.Low, k.Close, k.Volume, marker))
+			sb.WriteString(fmt.Sprintf("%-14s %-9s %-9s %-9s %-9s %-12.2f%s\n",
+				timeStr, formatPriceSmart(k.Open), formatPriceSmart(k.High), formatPriceSmart(k.Low), formatPriceSmart(k.Close), k.Volume, marker))
 		}
 		sb.WriteString("\n")
 	} else if len(data.MidPrices) > 0 {
@@ -403,7 +421,7 @@ func formatTimeframeSeriesDataZH(sb *strings.Builder, data *market.TimeframeSeri
 		sb.WriteString(fmt.Sprintf("RSI14: %s\n", formatFloatSlice(data.RSI14Values)))
 	}
 	if data.ATR14 > 0 {
-		sb.WriteString(fmt.Sprintf("ATR14: %.3f\n", data.ATR14))
+		sb.WriteString(fmt.Sprintf("ATR14: %s\n", formatPriceSmart(data.ATR14)))
 	}
 	if len(data.BOLLUpper) > 0 {
 		sb.WriteString(fmt.Sprintf("BOLL 上轨: %s\n", formatFloatSlice(data.BOLLUpper)))
@@ -516,12 +534,12 @@ func formatRecentTradesEN(orders []RecentOrder) string {
 			profitOrLoss = "Loss"
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s %s | Entry %.3f Exit %.3f | %s: %+.2f USDT (%+.2f%%) | %s → %s (%s)\n",
+		sb.WriteString(fmt.Sprintf("%d. %s %s | Entry %s Exit %s | %s: %+.2f USDT (%+.2f%%) | %s → %s (%s)\n",
 			i+1,
 			order.Symbol,
 			order.Side,
-			order.EntryPrice,
-			order.ExitPrice,
+			formatPriceSmart(order.EntryPrice),
+			formatPriceSmart(order.ExitPrice),
 			profitOrLoss,
 			order.RealizedPnL,
 			order.PnLPct,
@@ -544,7 +562,7 @@ func formatCurrentPositionsEN(strategy_config *store.StrategyConfig, ctx *Contex
 		drawdown := pos.UnrealizedPnLPct - pos.PeakPnLPct
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s | ", i+1, pos.Symbol, strings.ToUpper(pos.Side)))
-		sb.WriteString(fmt.Sprintf("Entry %.3f Current %.3f | ", pos.EntryPrice, pos.MarkPrice))
+		sb.WriteString(fmt.Sprintf("Entry %s Current %s | ", formatPriceSmart(pos.EntryPrice), formatPriceSmart(pos.MarkPrice)))
 		sb.WriteString(fmt.Sprintf("Qty %.3f | ", pos.Quantity))
 		sb.WriteString(fmt.Sprintf("Value %.2f USDT | ", pos.Quantity*pos.MarkPrice))
 		sb.WriteString(fmt.Sprintf("PnL %+.2f%% | ", pos.UnrealizedPnLPct))
@@ -552,7 +570,7 @@ func formatCurrentPositionsEN(strategy_config *store.StrategyConfig, ctx *Contex
 		sb.WriteString(fmt.Sprintf("Peak PnL %.2f%% | ", pos.PeakPnLPct))
 		sb.WriteString(fmt.Sprintf("Leverage %dx | ", pos.Leverage))
 		sb.WriteString(fmt.Sprintf("Margin %.0f USDT | ", pos.MarginUsed))
-		sb.WriteString(fmt.Sprintf("Liq Price %.3f\n", pos.LiquidationPrice))
+		sb.WriteString(fmt.Sprintf("Liq Price %s\n", formatPriceSmart(pos.LiquidationPrice)))
 
 		// Analysis hints
 		if drawdown < -0.30*pos.PeakPnLPct && pos.PeakPnLPct > 0.02 {
@@ -594,7 +612,7 @@ func formatCandidateCoinsEN(ctx *Context) string {
 
 		if ctx.MarketDataMap != nil {
 			if mdata, ok := ctx.MarketDataMap[coin.Symbol]; ok {
-				sb.WriteString(fmt.Sprintf("Current Price: %.3f\n\n", mdata.CurrentPrice))
+				sb.WriteString(fmt.Sprintf("Current Price: %s\n\n", formatPriceSmart(mdata.CurrentPrice)))
 
 				if mdata.TimeframeData != nil {
 					sb.WriteString(formatKlineDataEN(coin.Symbol, mdata.TimeframeData, ctx.Timeframes))
@@ -635,12 +653,12 @@ func formatKlineDataEN(symbol string, tfData map[string]*market.TimeframeSeriesD
 			for i := startIdx; i < len(data.Klines); i++ {
 				k := data.Klines[i]
 				t := time.UnixMilli(k.Time).UTC()
-				sb.WriteString(fmt.Sprintf("%s    %.3f    %.3f    %.3f    %.3f    %.2f\n",
+				sb.WriteString(fmt.Sprintf("%s    %s    %s    %s    %s    %.2f\n",
 					t.Format("01-02 15:04"),
-					k.Open,
-					k.High,
-					k.Low,
-					k.Close,
+					formatPriceSmart(k.Open),
+					formatPriceSmart(k.High),
+					formatPriceSmart(k.Low),
+					formatPriceSmart(k.Close),
 					k.Volume,
 				))
 			}
@@ -683,7 +701,7 @@ func formatIndicatorSeriesEN(sb *strings.Builder, data *market.TimeframeSeriesDa
 		wrote = true
 	}
 	if data.ATR14 > 0 {
-		sb.WriteString(fmt.Sprintf("ATR14: %.3f\n", data.ATR14))
+		sb.WriteString(fmt.Sprintf("ATR14: %s\n", formatPriceSmart(data.ATR14)))
 		wrote = true
 	}
 	if len(data.BOLLUpper) > 0 {
@@ -732,9 +750,9 @@ func formatMarketDataEN(strategy_config *store.StrategyConfig, data *market.Data
 	var sb strings.Builder
 	sb.WriteString("## 📈 Market Data Overview\n\n")
 	sb.WriteString(fmt.Sprintf("### %s Market Data\n\n", data.Symbol))
-	sb.WriteString(fmt.Sprintf("current_price = %.3f", data.CurrentPrice))
-	sb.WriteString(fmt.Sprintf(", current_ema20 = %.3f", data.CurrentEMA20))
-	sb.WriteString(fmt.Sprintf(", current_macd = %.3f", data.CurrentMACD))
+	sb.WriteString(fmt.Sprintf("current_price = %s", formatPriceSmart(data.CurrentPrice)))
+	sb.WriteString(fmt.Sprintf(", current_ema20 = %s", formatPriceSmart(data.CurrentEMA20)))
+	sb.WriteString(fmt.Sprintf(", current_macd = %s", formatPriceSmart(data.CurrentMACD)))
 	sb.WriteString(fmt.Sprintf(", current_rsi7 = %.3f", data.CurrentRSI7))
 	sb.WriteString("\n\n")
 	if len(data.TimeframeData) > 0 {
@@ -769,17 +787,17 @@ func formatMarketDataEN(strategy_config *store.StrategyConfig, data *market.Data
 				sb.WriteString(fmt.Sprintf("Volume: %s\n\n", formatFloatSlice(data.IntradaySeries.Volume)))
 			}
 			if data.IntradaySeries.ATR14 > 0 {
-				sb.WriteString(fmt.Sprintf("3m ATR (14-period): %.3f\n\n", data.IntradaySeries.ATR14))
+				sb.WriteString(fmt.Sprintf("3m ATR (14-period): %s\n\n", formatPriceSmart(data.IntradaySeries.ATR14)))
 			}
 		}
 		if data.LongerTermContext != nil {
 			sb.WriteString(fmt.Sprintf("Longer-term context (%s timeframe):\n\n", strategy_config.Indicators.Klines.LongerTimeframe))
-			sb.WriteString(fmt.Sprintf("20-Period EMA: %.3f vs. 50-Period EMA: %.3f\n\n",
-				data.LongerTermContext.EMA20, data.LongerTermContext.EMA50))
-			sb.WriteString(fmt.Sprintf("3-Period ATR: %.3f vs. 14-Period ATR: %.3f\n\n",
-				data.LongerTermContext.ATR3, data.LongerTermContext.ATR14))
+			sb.WriteString(fmt.Sprintf("20-Period EMA: %s vs. 50-Period EMA: %s\n\n",
+				formatPriceSmart(data.LongerTermContext.EMA20), formatPriceSmart(data.LongerTermContext.EMA50)))
+			sb.WriteString(fmt.Sprintf("3-Period ATR: %s vs. 14-Period ATR: %s\n\n",
+				formatPriceSmart(data.LongerTermContext.ATR3), formatPriceSmart(data.LongerTermContext.ATR14)))
 
-			sb.WriteString(fmt.Sprintf("Current Volume: %.3f vs. Average Volume: %.3f\n\n",
+			sb.WriteString(fmt.Sprintf("Current Volume: %.0f vs. Average Volume: %.0f\n\n",
 				data.LongerTermContext.CurrentVolume, data.LongerTermContext.AverageVolume))
 			if len(data.LongerTermContext.MACDValues) > 0 {
 				sb.WriteString(fmt.Sprintf("MACD indicators: %s\n\n", formatFloatSlice(data.LongerTermContext.MACDValues)))
@@ -863,8 +881,8 @@ func formatTimeframeSeriesDataEN(sb *strings.Builder, data *market.TimeframeSeri
 			if i == len(data.Klines)-1 {
 				marker = "  <- current"
 			}
-			sb.WriteString(fmt.Sprintf("%-14s %-9.3f %-9.3f %-9.3f %-9.3f %-12.2f%s\n",
-				timeStr, k.Open, k.High, k.Low, k.Close, k.Volume, marker))
+			sb.WriteString(fmt.Sprintf("%-14s %-9s %-9s %-9s %-9s %-12.2f%s\n",
+				timeStr, formatPriceSmart(k.Open), formatPriceSmart(k.High), formatPriceSmart(k.Low), formatPriceSmart(k.Close), k.Volume, marker))
 		}
 		sb.WriteString("\n")
 	} else if len(data.MidPrices) > 0 {
@@ -889,7 +907,7 @@ func formatTimeframeSeriesDataEN(sb *strings.Builder, data *market.TimeframeSeri
 		sb.WriteString(fmt.Sprintf("RSI14: %s\n", formatFloatSlice(data.RSI14Values)))
 	}
 	if data.ATR14 > 0 {
-		sb.WriteString(fmt.Sprintf("ATR14: %.3f\n", data.ATR14))
+		sb.WriteString(fmt.Sprintf("ATR14: %s\n", formatPriceSmart(data.ATR14)))
 	}
 	if len(data.BOLLUpper) > 0 {
 		sb.WriteString(fmt.Sprintf("BOLL Upper: %s\n", formatFloatSlice(data.BOLLUpper)))
@@ -995,7 +1013,7 @@ func formatFlowValue(v float64) string {
 func formatFloatSlice(values []float64) string {
 	strValues := make([]string, len(values))
 	for i, v := range values {
-		strValues[i] = fmt.Sprintf("%.3f", v)
+		strValues[i] = formatPriceSmart(v)
 	}
 	return "[" + strings.Join(strValues, ", ") + "]"
 }
