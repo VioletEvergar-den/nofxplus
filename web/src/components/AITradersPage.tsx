@@ -1837,7 +1837,10 @@ function ModelConfigModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedModelId || !apiKey.trim()) return
+    if (!selectedModelId) return
+    // 编辑模式：后端不回传密钥（安全），apiKey 为空表示保留后端已存旧密钥（store 层已支持空值保留）；
+    // 新建模式：密钥必填
+    if (!editingModelId && !apiKey.trim()) return
 
     onSave(
       selectedModelId,
@@ -1988,14 +1991,18 @@ function ModelConfigModal({
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={t('enterAPIKey', language)}
+                    placeholder={
+                      editingModelId
+                        ? t('keepExistingAPIKey', language)
+                        : t('enterAPIKey', language)
+                    }
                     className="w-full px-3 py-2 rounded"
                     style={{
                       background: '#0B0E11',
                       border: '1px solid #2B3139',
                       color: '#EAECEF',
                     }}
-                    required
+                    required={!editingModelId}
                   />
                 </div>
 
@@ -2128,7 +2135,7 @@ function ModelConfigModal({
             </button>
             <button
               type="submit"
-              disabled={!selectedModel || !apiKey.trim()}
+              disabled={!selectedModel || (!editingModelId && !apiKey.trim())}
               className="flex-1 px-4 py-2 rounded text-sm font-semibold disabled:opacity-50"
               style={{ background: '#F0B90B', color: '#000' }}
             >
