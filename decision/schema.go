@@ -206,20 +206,6 @@ var DataDictionary = map[string]map[string]BilingualFieldDef{
 			DescZH: "该时间段的交易量",
 			DescEN: "Trading volume in this period",
 		},
-		"OI": {
-			NameZH: "持仓量",
-			NameEN: "Open Interest",
-			Unit:   "USDT",
-			DescZH: "未平仓合约的总价值。持仓量增加=资金流入，减少=资金流出",
-			DescEN: "Total value of open contracts. Increasing OI = capital inflow, decreasing = outflow",
-		},
-		"OIChange": {
-			NameZH: "持仓量变化",
-			NameEN: "OI Change",
-			Unit:   "USDT & %",
-			DescZH: "1小时内持仓量的变化。用于判断市场真实资金流向",
-			DescEN: "OI change in 1 hour. Used to determine real capital flow direction",
-		},
 	},
 }
 
@@ -298,13 +284,6 @@ var TradingRules = struct {
 			ReasonZH: "放量突破通常意味着强趋势",
 			ReasonEN: "Volume breakout usually indicates strong trend",
 		},
-		"OIChangeThreshold": {
-			Value:    0.02,
-			DescZH:   "持仓量1小时内变化超过2%视为显著变化",
-			DescEN:   "OI change >2% in 1 hour is considered significant",
-			ReasonZH: "大额资金进出会导致持仓量显著变化",
-			ReasonEN: "Large capital flows cause significant OI changes",
-		},
 	},
 
 	ExitSignals: map[string]BilingualRuleDef{
@@ -346,59 +325,6 @@ var TradingRules = struct {
 	},
 }
 
-// ========== OI解读 ==========
-
-// OIInterpretation OI变化的市场解读（双语）
-type OIInterpretationType struct {
-	OIUp_PriceUp struct {
-		ZH string
-		EN string
-	}
-	OIUp_PriceDown struct {
-		ZH string
-		EN string
-	}
-	OIDown_PriceUp struct {
-		ZH string
-		EN string
-	}
-	OIDown_PriceDown struct {
-		ZH string
-		EN string
-	}
-}
-
-var OIInterpretation = OIInterpretationType{
-	OIUp_PriceUp: struct {
-		ZH string
-		EN string
-	}{
-		ZH: "强多头趋势（新多单开仓，资金流入做多）",
-		EN: "Strong bullish trend (new longs opening, capital flowing into long positions)",
-	},
-	OIUp_PriceDown: struct {
-		ZH string
-		EN string
-	}{
-		ZH: "强空头趋势（新空单开仓，资金流入做空）",
-		EN: "Strong bearish trend (new shorts opening, capital flowing into short positions)",
-	},
-	OIDown_PriceUp: struct {
-		ZH string
-		EN string
-	}{
-		ZH: "空头平仓（空头止损离场，可能出现反转）",
-		EN: "Shorts covering (shorts stopped out, potential reversal)",
-	},
-	OIDown_PriceDown: struct {
-		ZH string
-		EN string
-	}{
-		ZH: "多头平仓（多头止损离场，可能出现反转）",
-		EN: "Longs closing (longs stopped out, potential reversal)",
-	},
-}
-
 // ========== 常见错误 ==========
 
 // CommonMistake 常见错误定义
@@ -435,14 +361,6 @@ var CommonMistakes = []CommonMistake{
 		ExampleEN: "Only watching current PnL, ignoring drawdown",
 		CorrectZH: "当前PnL接近Peak PnL时，应考虑止盈以锁定利润",
 		CorrectEN: "When current PnL near Peak PnL, consider taking profit to lock in gains",
-	},
-	{
-		ErrorZH:   "忽略持仓量(OI)变化",
-		ErrorEN:   "Ignoring Open Interest changes",
-		ExampleZH: "只看价格K线，不看资金流向",
-		ExampleEN: "Only watching price candles, not capital flows",
-		CorrectZH: "结合OI变化判断趋势的真实性和持续性",
-		CorrectEN: "Use OI changes to validate trend authenticity and sustainability",
 	},
 }
 
@@ -513,13 +431,6 @@ func getSchemaPromptZH(rc *store.RiskControlConfig) string {
 		prompt += "- **" + name + "**: " + rule.DescZH + "\n  理由：" + rule.ReasonZH + "\n"
 	}
 
-	// OI解读
-	prompt += "\n## 💹 持仓量(OI)变化解读\n\n"
-	prompt += "- **OI增加 + 价格上涨**: " + OIInterpretation.OIUp_PriceUp.ZH + "\n"
-	prompt += "- **OI增加 + 价格下跌**: " + OIInterpretation.OIUp_PriceDown.ZH + "\n"
-	prompt += "- **OI减少 + 价格上涨**: " + OIInterpretation.OIDown_PriceUp.ZH + "\n"
-	prompt += "- **OI减少 + 价格下跌**: " + OIInterpretation.OIDown_PriceDown.ZH + "\n"
-
 	// 常见错误
 	prompt += "\n## ⚠️ 常见错误（请避免）\n\n"
 	for i, mistake := range CommonMistakes {
@@ -581,13 +492,6 @@ func getSchemaPromptEN(rc *store.RiskControlConfig) string {
 	for name, rule := range TradingRules.ExitSignals {
 		prompt += "- **" + name + "**: " + rule.DescEN + "\n  Reason: " + rule.ReasonEN + "\n"
 	}
-
-	// OI Interpretation
-	prompt += "\n## 💹 Open Interest (OI) Change Interpretation\n\n"
-	prompt += "- **OI Up + Price Up**: " + OIInterpretation.OIUp_PriceUp.EN + "\n"
-	prompt += "- **OI Up + Price Down**: " + OIInterpretation.OIUp_PriceDown.EN + "\n"
-	prompt += "- **OI Down + Price Up**: " + OIInterpretation.OIDown_PriceUp.EN + "\n"
-	prompt += "- **OI Down + Price Down**: " + OIInterpretation.OIDown_PriceDown.EN + "\n"
 
 	// Common Mistakes
 	prompt += "\n## ⚠️ Common Mistakes to Avoid\n\n"

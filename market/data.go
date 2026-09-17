@@ -16,27 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
-
-// CoinAnk 熔断状态：外部行情服务连续失败时临时切换 Binance 直连，避免每次请求都等待超时
-var (
-	coinankFailCount    int32 // 连续失败次数
-	coinankBreakerUntil int64 // 熔断截止时间（UnixMilli）
-)
-
-func coinankBreakerOpen() bool {
-	return atomic.LoadInt32(&coinankFailCount) >= 3 && time.Now().UnixMilli() < atomic.LoadInt64(&coinankBreakerUntil)
-}
-
-func coinankMarkSuccess() { atomic.StoreInt32(&coinankFailCount, 0) }
-
-func coinankMarkFailure() {
-	if atomic.AddInt32(&coinankFailCount, 1) >= 3 {
-		atomic.StoreInt64(&coinankBreakerUntil, time.Now().Add(5*time.Minute).UnixMilli())
-	}
-}
 
 // getCurrentPriceWithFallback gets real-time price from ticker API with fallback to K-line data
 func getCurrentPriceWithFallback(symbol string, klines []Kline) (float64, string) {
@@ -155,9 +136,15 @@ func getKlinesFromHyperliquid(symbol, interval string, limit int) ([]Kline, erro
 // exchange: "binance", "bybit", "okx", "bitget", "aster"
 // interval: supports second/minute/hour/day/week/month intervals as provided by CoinAnk
 func GetKlinesCoinank(symbol, interval, exchange string, limit int) ([]Kline, error) {
-	// Binance 请求且处于熔断期时直接走币安官方 API，跳过外部行情源
-	if strings.ToLower(exchange) == "binance" && coinankBreakerOpen() {
-		return getKlinesFromBinance(symbol, interval, limit)
+	// 币安请求优先直连币安官方 API（全精度）。
+	// CoinAnk 外部源对小价格币种存在致命精度丢失（如 DOGEUSDT 的 4h/1h/15m/5m 全序列
+	// 价格被抹平到三位小数），影响图表显示与 AI 决策数据质量，故调整优先级。
+	if strings.ToLower(exchange) == "binance" {
+		binanceKlines, binanceErr := getKlinesFromBinance(symbol, interval, limit)
+		if binanceErr == nil {
+			return binanceKlines, nil
+		}
+		logger.Warnf("⚠️ Binance native API failed for %s, falling back to CoinAnk: %v", symbol, binanceErr)
 	}
 
 	// Map exchange string to coinank enum
@@ -244,20 +231,16 @@ func GetKlinesCoinank(symbol, interval, exchange string, limit int) ([]Kline, er
 			logger.Warnf("⚠️ CoinAnk free API doesn't support %s, falling back to Binance", coinankExchange)
 			coinankKlines, err = coinank_api.Kline(ctx, symbol, coinank_enum.Binance, ts, coinank_enum.To, limit, coinankInterval)
 			if err != nil {
-				coinankMarkFailure()
 				return nil, fmt.Errorf("coinank API error (fallback): %w", err)
 			}
 		} else if strings.ToLower(exchange) == "binance" {
 			// CoinAnk 服务异常时 Binance 官方 API 直连兜底，图表数据不再被外部服务拖死
 			logger.Warnf("⚠️ CoinAnk API failed for %s (binance), falling back to Binance native API: %v", symbol, err)
-			coinankMarkFailure()
 			return getKlinesFromBinance(symbol, interval, limit)
 		} else {
-			coinankMarkFailure()
 			return nil, fmt.Errorf("coinank API error: %w", err)
 		}
 	}
-	coinankMarkSuccess()
 
 	// Convert to market.Kline format
 	klines := make([]Kline, len(coinankKlines))
@@ -1161,19 +1144,6 @@ func Format(data *Data) string {
 	priceStr := formatPriceWithDynamicPrecision(data.CurrentPrice)
 	sb.WriteString(fmt.Sprintf("current_price = %s, current_ema20 = %.3f, current_macd = %.3f, current_rsi (7 period) = %.3f\n\n",
 		priceStr, data.CurrentEMA20, data.CurrentMACD, data.CurrentRSI7))
-
-	sb.WriteString(fmt.Sprintf("In addition, here is the latest %s open interest and funding rate for perps:\n\n",
-		data.Symbol))
-
-	if data.OpenInterest != nil {
-		// Format OI data with dynamic precision
-		oiLatestStr := formatPriceWithDynamicPrecision(data.OpenInterest.Latest)
-		oiAverageStr := formatPriceWithDynamicPrecision(data.OpenInterest.Average)
-		sb.WriteString(fmt.Sprintf("Open Interest: Latest: %s Average: %s\n\n",
-			oiLatestStr, oiAverageStr))
-	}
-
-	sb.WriteString(fmt.Sprintf("Funding Rate: %.2e\n\n", data.FundingRate))
 
 	if data.IntradaySeries != nil {
 		sb.WriteString("Intraday series (3‑minute intervals, oldest → latest):\n\n")

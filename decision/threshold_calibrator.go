@@ -756,23 +756,23 @@ func (c *ThresholdCalibrator) FormatThresholdsForPrompt(lang string, concise boo
 func (c *ThresholdCalibrator) formatThresholdsConcise(lang string) string {
 	if lang == "zh" {
 		return fmt.Sprintf(`📊 风险阈值 (基于%d笔交易):
-• 弱成交量: %.2f | 弱持仓量: %.2f
-• 动量衰减: 成交量%.2f | 持仓量%.2f
+• 弱成交量: %.2f
+• 动量衰减: 成交量%.2f
 • 流动性: 价差>%.1fx | 深度<%.2f`,
 			c.SampleSize,
-			c.WeakVolumeThreshold, c.WeakOIThreshold,
-			c.VolumeDecayThreshold, c.OIDecayThreshold,
+			c.WeakVolumeThreshold,
+			c.VolumeDecayThreshold,
 			c.SpreadWorseningMultiple, c.DepthReductionThreshold,
 		)
 	}
 
 	return fmt.Sprintf(`📊 Risk Thresholds (from %d trades):
-• Weak Volume: %.2f | Weak OI: %.2f
-• Momentum Decay: Volume%.2f | OI%.2f
+• Weak Volume: %.2f
+• Momentum Decay: Volume%.2f
 • Liquidity: Spread>%.1fx | Depth<%.2f`,
 		c.SampleSize,
-		c.WeakVolumeThreshold, c.WeakOIThreshold,
-		c.VolumeDecayThreshold, c.OIDecayThreshold,
+		c.WeakVolumeThreshold,
+		c.VolumeDecayThreshold,
 		c.SpreadWorseningMultiple, c.DepthReductionThreshold,
 	)
 }
@@ -787,12 +787,10 @@ func (c *ThresholdCalibrator) formatThresholdsDetailed(lang string) string {
 		// Entry quality with confidence
 		sb.WriteString("**🎯 入场质量检测**:\n")
 		c.addThresholdWithConfidence(&sb, "成交量警戒", "VolumeAtEntry", c.WeakVolumeThreshold, lang)
-		c.addThresholdWithConfidence(&sb, "持仓量警戒", "OIAtEntry", c.WeakOIThreshold, lang)
 
 		// Momentum decay with confidence
 		sb.WriteString("\n**📉 持仓期间监控**:\n")
 		c.addThresholdWithConfidence(&sb, "成交量衰减", "VolumeDuringTrade", c.VolumeDecayThreshold, lang)
-		c.addThresholdWithConfidence(&sb, "持仓量衰减", "OIDuringTrade", c.OIDecayThreshold, lang)
 
 		// Liquidity (no Bayesian confidence yet)
 		sb.WriteString("\n**💧 流动性监控**:\n")
@@ -808,12 +806,10 @@ func (c *ThresholdCalibrator) formatThresholdsDetailed(lang string) string {
 		// Entry quality with confidence
 		sb.WriteString("**🎯 Entry Quality Detection**:\n")
 		c.addThresholdWithConfidence(&sb, "Volume Alert", "VolumeAtEntry", c.WeakVolumeThreshold, lang)
-		c.addThresholdWithConfidence(&sb, "OI Alert", "OIAtEntry", c.WeakOIThreshold, lang)
 
 		// Momentum decay with confidence
 		sb.WriteString("\n**📉 During-Trade Monitoring**:\n")
 		c.addThresholdWithConfidence(&sb, "Volume Decay", "VolumeDuringTrade", c.VolumeDecayThreshold, lang)
-		c.addThresholdWithConfidence(&sb, "OI Decay", "OIDuringTrade", c.OIDecayThreshold, lang)
 
 		// Liquidity (no Bayesian confidence yet)
 		sb.WriteString("\n**💧 Liquidity Monitoring**:\n")
@@ -913,15 +909,11 @@ func (c *ThresholdCalibrator) formatThresholdsFull(lang string) string {
 		sb.WriteString("这些阈值帮助判断是否在合适的市场条件下入场：\n")
 		c.addThresholdWithExplanation(&sb, "成交量警戒线", "VolumeAtEntry", c.WeakVolumeThreshold,
 			"低于此值表示市场成交量不足，信号可能不可靠", lang)
-		c.addThresholdWithExplanation(&sb, "持仓量警戒线", "OIAtEntry", c.WeakOIThreshold,
-			"低于此值表示持仓兴趣不足，趋势可能缺乏持续性", lang)
 
 		sb.WriteString("\n### 📉 持仓期间监控阈值\n")
 		sb.WriteString("这些阈值帮助判断持仓期间市场条件是否恶化：\n")
 		c.addThresholdWithExplanation(&sb, "成交量衰减警戒", "VolumeDuringTrade", c.VolumeDecayThreshold,
 			"成交量下降超过此比例表示动量正在衰减，应考虑提前退出", lang)
-		c.addThresholdWithExplanation(&sb, "持仓量衰减警戒", "OIDuringTrade", c.OIDecayThreshold,
-			"持仓量下降超过此比例表示市场兴趣正在减弱", lang)
 
 		sb.WriteString("\n### 💧 流动性监控阈值\n")
 		sb.WriteString("这些阈值帮助判断执行条件是否恶化：\n")
@@ -943,15 +935,11 @@ func (c *ThresholdCalibrator) formatThresholdsFull(lang string) string {
 		sb.WriteString("These thresholds help determine if market conditions are suitable for entry:\n")
 		c.addThresholdWithExplanation(&sb, "Volume Alert", "VolumeAtEntry", c.WeakVolumeThreshold,
 			"Below this value indicates insufficient market volume, signals may be unreliable", lang)
-		c.addThresholdWithExplanation(&sb, "OI Alert", "OIAtEntry", c.WeakOIThreshold,
-			"Below this value indicates insufficient position interest, trend may lack persistence", lang)
 
 		sb.WriteString("\n### 📉 During-Trade Monitoring Thresholds\n")
 		sb.WriteString("These thresholds help determine if market conditions are deteriorating during holding:\n")
 		c.addThresholdWithExplanation(&sb, "Volume Decay", "VolumeDuringTrade", c.VolumeDecayThreshold,
 			"Volume decline beyond this indicates momentum decay, consider early exit", lang)
-		c.addThresholdWithExplanation(&sb, "OI Decay", "OIDuringTrade", c.OIDecayThreshold,
-			"OI decline beyond this indicates weakening market interest", lang)
 
 		sb.WriteString("\n### 💧 Liquidity Monitoring Thresholds\n")
 		sb.WriteString("These thresholds help determine if execution conditions are deteriorating:\n")

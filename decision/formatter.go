@@ -3,7 +3,6 @@ package decision
 import (
 	"fmt"
 	"nofx/market"
-	"nofx/provider"
 	"nofx/store"
 	"sort"
 	"strings"
@@ -148,31 +147,6 @@ func formatCandidateCoinsZH(ctx *Context) string {
 			}
 		}
 
-		// OI数据（如果有）
-		if ctx.OITopDataMap != nil {
-			if oiData, ok := ctx.OITopDataMap[coin.Symbol]; ok {
-				sb.WriteString(fmt.Sprintf("**持仓量变化**: OI排名 #%d | 变化 %+.2f%% (%+.2fM USDT) | 价格变化 %+.2f%%\n\n",
-					oiData.Rank,
-					oiData.OIDeltaPercent,
-					oiData.OIDeltaValue/1_000_000,
-					oiData.PriceDeltaPercent,
-				))
-
-				// OI解读
-				oiChange := "增加"
-				if oiData.OIDeltaPercent < 0 {
-					oiChange = "减少"
-				}
-				priceChange := "上涨"
-				if oiData.PriceDeltaPercent < 0 {
-					priceChange = "下跌"
-				}
-
-				interpretation := getOIInterpretationZH(oiChange, priceChange)
-				sb.WriteString(fmt.Sprintf("**市场解读**: %s\n\n", interpretation))
-			}
-		}
-
 		// 量化数据分析提示 (如果有)
 		if ctx.QuantDataMap != nil {
 			if qdata, ok := ctx.QuantDataMap[coin.Symbol]; ok {
@@ -266,82 +240,6 @@ func formatIndicatorSeriesZH(sb *strings.Builder, data *market.TimeframeSeriesDa
 	}
 }
 
-// formatOIRankingZH 格式化OI排名数据（中文）
-func formatOIRankingZH(oiData interface{}) string {
-	if oiData == nil {
-		return "## 市场持仓量排名\n\n(暂无数据)\n\n"
-	}
-
-	// Try to format as OIRankingData structure
-	if oiRanking, ok := oiData.(*provider.OIRankingData); ok {
-		if oiRanking == nil || (len(oiRanking.TopPositions) == 0 && len(oiRanking.LowPositions) == 0) {
-			return "## 市场持仓量排名\n\n(数据加载中...)\n\n"
-		}
-
-		var sb strings.Builder
-		sb.WriteString("## 市场持仓量排名\n\n")
-
-		if len(oiRanking.TopPositions) > 0 {
-			sb.WriteString("### 持仓量TOP (最高杠杆长仓)\n\n")
-			sb.WriteString("市场资金正在流入以下币种，可能表示趋势延续或新仓位建立:\n\n")
-			sb.WriteString("| 排名 | 币种 | 持仓变化值(USDT) | 变化幅度 | 价格变化 |\n")
-			sb.WriteString("|------|------|------------------|----------|----------|\n")
-			for i, pos := range oiRanking.TopPositions {
-				if i >= 5 {
-					break // 只显示前5个
-				}
-				sb.WriteString(fmt.Sprintf("| #%d | %s | %s | %+.2f%% | %+.2f%% |\n",
-					pos.Rank,
-					pos.Symbol,
-					formatOIValue(pos.OIDeltaValue),
-					pos.OIDeltaPercent,
-					pos.PriceDeltaPercent,
-				))
-			}
-			sb.WriteString("\n")
-			sb.WriteString("**解读**: 持仓增加 + 价格上涨 = 多头主导; 持仓增加 + 价格下跌 = 空头主导\n\n")
-		}
-
-		if len(oiRanking.LowPositions) > 0 {
-			sb.WriteString("### 持仓量LOW (最高杠杆空仓)\n\n")
-			sb.WriteString("市场资金正在流出以下币种，可能表示趋势反转或仓位平仓:\n\n")
-			sb.WriteString("| 排名 | 币种 | 持仓变化值(USDT) | 变化幅度 | 价格变化 |\n")
-			sb.WriteString("|------|------|------------------|----------|----------|\n")
-			for i, pos := range oiRanking.LowPositions {
-				if i >= 5 {
-					break
-				}
-				sb.WriteString(fmt.Sprintf("| #%d | %s | %s | %+.2f%% | %+.2f%% |\n",
-					pos.Rank,
-					pos.Symbol,
-					formatOIValue(pos.OIDeltaValue),
-					pos.OIDeltaPercent,
-					pos.PriceDeltaPercent,
-				))
-			}
-			sb.WriteString("\n")
-			sb.WriteString("**解读**: 持仓减少 + 价格上涨 = 空头平仓(反弹); 持仓减少 + 价格下跌 = 多头平仓(回调)\n\n")
-		}
-
-		return sb.String()
-	}
-
-	return "## 市场持仓量排名\n\n(数据加载中...)\n\n"
-}
-
-// getOIInterpretationZH 获取OI变化解读（中文）
-func getOIInterpretationZH(oiChange, priceChange string) string {
-	if oiChange == "增加" && priceChange == "上涨" {
-		return OIInterpretation.OIUp_PriceUp.ZH
-	} else if oiChange == "增加" && priceChange == "下跌" {
-		return OIInterpretation.OIUp_PriceDown.ZH
-	} else if oiChange == "减少" && priceChange == "上涨" {
-		return OIInterpretation.OIDown_PriceUp.ZH
-	} else {
-		return OIInterpretation.OIDown_PriceDown.ZH
-	}
-}
-
 // formatMarketDataZH 格式化市场数据（中文）
 func formatMarketDataZH(strategy_config *store.StrategyConfig, data *market.Data) string {
 	if data == nil {
@@ -356,8 +254,6 @@ func formatMarketDataZH(strategy_config *store.StrategyConfig, data *market.Data
 	sb.WriteString(fmt.Sprintf(",  📈 当前MACD: %.3f\n", data.CurrentMACD))
 	sb.WriteString(fmt.Sprintf(",  📈 当前RSI7: %.3f\n", data.CurrentRSI7))
 	sb.WriteString("\n\n")
-	sb.WriteString(fmt.Sprintf(",  📈 当前OI: %.2f & 平均OI: %.2f\n\n", data.OpenInterest.Latest, data.OpenInterest.Average))
-	sb.WriteString(fmt.Sprintf(",  📈 当前资金费率: %.3f%%\n", data.FundingRate))
 	if len(data.TimeframeData) > 0 {
 		timeframeOrder := []string{"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"}
 		for _, tf := range timeframeOrder {
@@ -582,19 +478,6 @@ func formatQuantDataZH(data *QuantData) string {
 		}
 	}
 
-	if len(data.OI) > 0 {
-		for exchange, oiData := range data.OI {
-			if len(oiData.Delta) > 0 {
-				sb.WriteString(fmt.Sprintf("持仓量变化 (%s):\n", exchange))
-				for _, tf := range []string{"5m", "15m", "1h", "4h", "12h", "24h"} {
-					if d, ok := oiData.Delta[tf]; ok {
-						sb.WriteString(fmt.Sprintf("    %s: %+.3f%% (%s)\n", tf, d.OIDeltaPercent, formatFlowValue(d.OIDeltaValue)))
-					}
-				}
-			}
-		}
-	}
-
 	return sb.String()
 }
 
@@ -719,29 +602,6 @@ func formatCandidateCoinsEN(ctx *Context) string {
 			}
 		}
 
-		if ctx.OITopDataMap != nil {
-			if oiData, ok := ctx.OITopDataMap[coin.Symbol]; ok {
-				sb.WriteString(fmt.Sprintf("**OI Change**: Rank #%d | Change %+.2f%% (%+.2fM USDT) | Price Change %+.2f%%\n\n",
-					oiData.Rank,
-					oiData.OIDeltaPercent,
-					oiData.OIDeltaValue/1_000_000,
-					oiData.PriceDeltaPercent,
-				))
-
-				oiChange := "increase"
-				if oiData.OIDeltaPercent < 0 {
-					oiChange = "decrease"
-				}
-				priceChange := "up"
-				if oiData.PriceDeltaPercent < 0 {
-					priceChange = "down"
-				}
-
-				interpretation := getOIInterpretationEN(oiChange, priceChange)
-				sb.WriteString(fmt.Sprintf("**Market Interpretation**: %s\n\n", interpretation))
-			}
-		}
-
 		if ctx.QuantDataMap != nil {
 			if qdata, ok := ctx.QuantDataMap[coin.Symbol]; ok {
 				sb.WriteString(formatQuantDataEN(qdata))
@@ -837,83 +697,6 @@ func formatIndicatorSeriesEN(sb *strings.Builder, data *market.TimeframeSeriesDa
 	}
 }
 
-// formatOIRankingEN 格式化OI排名数据（英文）
-func formatOIRankingEN(oiData interface{}) string {
-	if oiData == nil {
-		return "## Market-wide OI Ranking\n\n(No data available)\n\n"
-	}
-
-	// Try to format as OIRankingData structure
-	if oiRanking, ok := oiData.(*provider.OIRankingData); ok {
-		if oiRanking == nil || (len(oiRanking.TopPositions) == 0 && len(oiRanking.LowPositions) == 0) {
-			return "## Market-wide OI Ranking\n\n(Loading data...)\n\n"
-		}
-
-		var sb strings.Builder
-		sb.WriteString("## Market-wide OI Ranking\n\n")
-
-		if len(oiRanking.TopPositions) > 0 {
-			sb.WriteString("### Top OI Positions (Highest Leverage Long)\n\n")
-			sb.WriteString("Market funds are flowing into the following coins, possibly indicating trend continuation or new position building:\n\n")
-			sb.WriteString("| Rank | Symbol | OI Change Value (USDT) | Change Percent | Price Change |\n")
-			sb.WriteString("|------|--------|------------------------|----------------|--------------|\n")
-			for i, pos := range oiRanking.TopPositions {
-				if i >= 5 {
-					break // Show only top 5
-				}
-				sb.WriteString(fmt.Sprintf("| #%d | %s | %s | %+.2f%% | %+.2f%% |\n",
-					pos.Rank,
-					pos.Symbol,
-					formatOIValue(pos.OIDeltaValue),
-					pos.OIDeltaPercent,
-					pos.PriceDeltaPercent,
-				))
-			}
-			sb.WriteString("\n")
-			sb.WriteString("**Interpretion**: OI Increase + Price Up = Bullish Dominance; OI Increase + Price Down = Bearish Dominance\n\n")
-		}
-
-		if len(oiRanking.LowPositions) > 0 {
-			sb.WriteString("### Low OI Positions (Highest Leverage Short)\n\n")
-			sb.WriteString("Market funds are flowing out of the following coins, possibly indicating trend reversal or position liquidation:\n\n")
-			sb.WriteString("| Rank | Symbol | OI Change Value (USDT) | Change Percent | Price Change |\n")
-			sb.WriteString("|------|--------|------------------------|----------------|--------------|\n")
-			for i, pos := range oiRanking.LowPositions {
-				if i >= 5 {
-					break
-				}
-				sb.WriteString(fmt.Sprintf("| #%d | %s | %s | %+.2f%% | %+.2f%% |\n",
-					pos.Rank,
-					pos.Symbol,
-					formatOIValue(pos.OIDeltaValue),
-					pos.OIDeltaPercent,
-					pos.PriceDeltaPercent,
-				))
-			}
-			sb.WriteString("\n")
-			sb.WriteString("**Interpretion**: OI Decrease + Price Up = Short Covering (Rebound); OI Decrease + Price Down = Long Liquidation (Pullback)\n\n")
-		}
-
-		return sb.String()
-	}
-
-	return "## Market-wide OI Ranking\n\n(Loading data...)\n\n"
-}
-
-// getOIInterpretationEN 获取OI变化解读（英文）
-func getOIInterpretationEN(oiChange, priceChange string) string {
-	if oiChange == "increase" && priceChange == "up" {
-		return OIInterpretation.OIUp_PriceUp.EN
-	} else if oiChange == "increase" && priceChange == "down" {
-		return OIInterpretation.OIUp_PriceDown.EN
-	} else if oiChange == "decrease" && priceChange == "up" {
-		return OIInterpretation.OIDown_PriceUp.EN
-	} else if oiChange == "decrease" && priceChange == "down" {
-		return OIInterpretation.OIDown_PriceDown.EN
-	}
-	return ""
-}
-
 // formatOptimizedWeightsZH formats optimized trading parameters (Chinese)
 func formatOptimizedWeightsZH(weights interface{}) string {
 	if weights == nil {
@@ -953,8 +736,7 @@ func formatMarketDataEN(strategy_config *store.StrategyConfig, data *market.Data
 	sb.WriteString(fmt.Sprintf(", current_ema20 = %.3f", data.CurrentEMA20))
 	sb.WriteString(fmt.Sprintf(", current_macd = %.3f", data.CurrentMACD))
 	sb.WriteString(fmt.Sprintf(", current_rsi7 = %.3f", data.CurrentRSI7))
-	sb.WriteString(fmt.Sprintf("Open Interest: Latest: %.2f Average: %.2f\n\n", data.OpenInterest.Latest, data.OpenInterest.Average))
-	sb.WriteString(fmt.Sprintf("Funding Rate: %.2e\n\n", data.FundingRate))
+	sb.WriteString("\n\n")
 	if len(data.TimeframeData) > 0 {
 		timeframeOrder := []string{"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"}
 		for _, tf := range timeframeOrder {
@@ -1182,45 +964,12 @@ func formatQuantDataEN(data *QuantData) string {
 		}
 	}
 
-	if len(data.OI) > 0 {
-		for exchange, oiData := range data.OI {
-			if len(oiData.Delta) > 0 {
-				sb.WriteString(fmt.Sprintf("Open Interest (%s):\n", exchange))
-				for _, tf := range []string{"5m", "15m", "1h", "4h", "12h", "24h"} {
-					if d, ok := oiData.Delta[tf]; ok {
-						sb.WriteString(fmt.Sprintf("    %s: %+.3f%% (%s)\n", tf, d.OIDeltaPercent, formatFlowValue(d.OIDeltaValue)))
-					}
-				}
-			}
-		}
-	}
-
 	return sb.String()
 }
 
 // =============================================
 //  辅助格式化函数
 // =============================================
-
-// formatOIValue 格式化持仓量数值，带单位和符号
-func formatOIValue(v float64) string {
-	sign := ""
-	if v >= 0 {
-		sign = "+"
-	}
-	absV := v
-	if absV < 0 {
-		absV = -absV
-	}
-	if absV >= 1e9 {
-		return fmt.Sprintf("%s%.2fB", sign, v/1e9)
-	} else if absV >= 1e6 {
-		return fmt.Sprintf("%s%.2fM", sign, v/1e6)
-	} else if absV >= 1e3 {
-		return fmt.Sprintf("%s%.2fK", sign, v/1e3)
-	}
-	return fmt.Sprintf("%s%.2f", sign, v)
-}
 
 // formatFlowValue 格式化资金流向数值，带单位和符号
 func formatFlowValue(v float64) string {

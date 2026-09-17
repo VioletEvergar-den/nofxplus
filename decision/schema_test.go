@@ -89,23 +89,6 @@ func TestTradingRules(t *testing.T) {
 	})
 }
 
-// TestOIInterpretation 测试OI解读
-func TestOIInterpretation(t *testing.T) {
-	t.Run("OI_Up_Price_Up", func(t *testing.T) {
-		if OIInterpretation.OIUp_PriceUp.ZH == "" {
-			t.Error("OI Up + Price Up ZH is empty")
-		}
-
-		if OIInterpretation.OIUp_PriceUp.EN == "" {
-			t.Error("OI Up + Price Up EN is empty")
-		}
-
-		if !strings.Contains(OIInterpretation.OIUp_PriceUp.ZH, "多头") {
-			t.Error("OI Up + Price Up should indicate bullish trend")
-		}
-	})
-}
-
 // TestCommonMistakes 测试常见错误定义
 func TestCommonMistakes(t *testing.T) {
 	if len(CommonMistakes) == 0 {
@@ -149,7 +132,6 @@ func TestGetSchemaPrompt(t *testing.T) {
 			"市场数据",
 			"交易规则",
 			"风险管理",
-			"持仓量(OI)变化解读",
 			"常见错误",
 		}
 
@@ -176,7 +158,6 @@ func TestGetSchemaPrompt(t *testing.T) {
 			"Market Data",
 			"Trading Rules",
 			"Risk Management",
-			"Open Interest",
 			"Common Mistakes",
 		}
 

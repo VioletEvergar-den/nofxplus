@@ -72,14 +72,6 @@ type CandidateCoin struct {
 	Sources []string `json:"sources"` // Sources: "ai500" and/or "oi_top"
 }
 
-// OITopData open interest growth top data (for AI decision reference)
-type OITopData struct {
-	Rank              int     // OI Top ranking
-	OIDeltaPercent    float64 // Open interest change percentage (1 hour)
-	OIDeltaValue      float64 // Open interest change value
-	PriceDeltaPercent float64 // Price change percentage
-}
-
 // TradingStats trading statistics (for AI input)
 type TradingStats struct {
 	TotalTrades    int     `json:"total_trades"`     // Total number of trades (closed)
@@ -182,9 +174,7 @@ type Context struct {
 	CalibratedThresholds   string                                  `json:"-"` // Learned thresholds for failure detection
 	MarketDataMap          map[string]*market.Data                 `json:"-"`
 	MultiTFMarket          map[string]map[string]*market.Data      `json:"-"`
-	OITopDataMap           map[string]*OITopData                   `json:"-"`
 	QuantDataMap           map[string]*QuantData                   `json:"-"`
-	OIRankingData          *provider.OIRankingData                 `json:"-"` // Market-wide OI ranking data
 	MicrostructureDataMap  map[string]*market.MarketMicrostructure `json:"-"` // Market microstructure data per symbol
 	BTCETHLeverage         int                                     `json:"-"`
 	AltcoinLeverage        int                                     `json:"-"`
@@ -317,22 +307,6 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 	if len(ctx.MarketDataMap) == 0 {
 		if err := fetchMarketDataWithStrategy(ctx, engine); err != nil {
 			return nil, fmt.Errorf("failed to fetch market data: %w", err)
-		}
-	}
-
-	// Ensure OITopDataMap is initialized
-	if ctx.OITopDataMap == nil {
-		ctx.OITopDataMap = make(map[string]*OITopData)
-		oiPositions, err := provider.GetOITopPositions()
-		if err == nil {
-			for _, pos := range oiPositions {
-				ctx.OITopDataMap[pos.Symbol] = &OITopData{
-					Rank:              pos.Rank,
-					OIDeltaPercent:    pos.OIDeltaPercent,
-					OIDeltaValue:      pos.OIDeltaValue,
-					PriceDeltaPercent: pos.PriceDeltaPercent,
-				}
-			}
 		}
 	}
 
@@ -843,94 +817,6 @@ func (e *StrategyEngine) FetchQuantDataBatch(symbols []string) map[string]*Quant
 	return result
 }
 
-// FetchOIRankingData fetches market-wide OI ranking data
-func (e *StrategyEngine) FetchOIRankingData() *provider.OIRankingData {
-	indicators := e.config.Indicators
-	if !indicators.EnableOIRanking {
-		return nil
-	}
-
-	baseURL := indicators.OIRankingAPIURL
-	if baseURL == "" {
-		baseURL = config.DefaultBaseURL
-	}
-
-	// Get auth key from existing API URL or use default
-	authKey := "cm_568c67eae410d912c54c"
-	if indicators.QuantDataAPIURL != "" {
-		if idx := strings.Index(indicators.QuantDataAPIURL, "auth="); idx != -1 {
-			authKey = indicators.QuantDataAPIURL[idx+5:]
-			if ampIdx := strings.Index(authKey, "&"); ampIdx != -1 {
-				authKey = authKey[:ampIdx]
-			}
-		}
-	}
-
-	duration := indicators.OIRankingDuration
-	if duration == "" {
-		duration = "1h"
-	}
-
-	limit := indicators.OIRankingLimit
-	if limit <= 0 {
-		limit = 10
-	}
-
-	logger.Infof("📊 Fetching OI ranking data (duration: %s, limit: %d)", duration, limit)
-
-	data, err := provider.GetOIRankingData(baseURL, authKey, duration, limit)
-	if err != nil {
-		logger.Warnf("⚠️  Failed to fetch OI ranking data: %v", err)
-
-		// Fallback tier 2: CoinGlass (requires COINGLASS_API_KEY to be set)
-		if e.config.CoinSource.EnableBinanceFallback {
-			fallbackData, fallbackErr := provider.GetOIRankingFromCoinGlass(duration, limit)
-			if fallbackErr == nil {
-				logger.Infof("✓ Using CoinGlass OI ranking fallback (%d positions)", len(fallbackData.TopPositions))
-				return fallbackData
-			}
-			logger.Warnf("⚠️  CoinGlass fallback failed: %v, trying Binance momentum fallback", fallbackErr)
-
-			// Fallback tier 3: Binance momentum-based ranking (always available)
-			symbolsData, _, binanceErr := provider.GetOITopSymbolsWithFallback(limit, false)
-			if binanceErr == nil && len(symbolsData) > 0 {
-				// Convert symbols to OIRankingData format
-				topCount := limit
-				if topCount > len(symbolsData) {
-					topCount = len(symbolsData)
-				}
-
-				oiPositions := make([]provider.OIPosition, 0, topCount)
-				for i := 0; i < topCount && i < len(symbolsData); i++ {
-					oiPositions = append(oiPositions, provider.OIPosition{
-						Symbol: symbolsData[i],
-						Rank:   i + 1,
-					})
-				}
-
-				binanceData := &provider.OIRankingData{
-					Duration:     duration,
-					TopPositions: oiPositions,
-					LowPositions: []provider.OIPosition{}, // Empty low positions for Binance fallback
-					FetchedAt:    time.Now(),
-				}
-				logger.Infof("✓ Using Binance momentum OI ranking fallback (%d top positions)", len(binanceData.TopPositions))
-				return binanceData
-			}
-			if binanceErr != nil {
-				logger.Warnf("⚠️  Binance fallback also failed: %v", binanceErr)
-			}
-		}
-
-		return nil
-	}
-
-	logger.Infof("✓ OI ranking data ready: %d top, %d low positions",
-		len(data.TopPositions), len(data.LowPositions))
-
-	return data
-}
-
 // ============================================================================
 // Prompt Building - System Prompt
 // ============================================================================
@@ -1159,14 +1045,6 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 			sb.WriteString(formatCandidateCoinsZH(ctx))
 		} else {
 			sb.WriteString(formatCandidateCoinsEN(ctx))
-		}
-	}
-	// 10. OI排名数据（如果有）
-	if ctx.OIRankingData != nil {
-		if lang == LangChinese {
-			sb.WriteString(formatOIRankingZH(ctx.OIRankingData))
-		} else {
-			sb.WriteString(formatOIRankingEN(ctx.OIRankingData))
 		}
 	}
 	sb.WriteString("---\n\n")

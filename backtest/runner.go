@@ -911,15 +911,6 @@ func (r *Runner) buildDecisionContext(ts int64, marketData map[string]*market.Da
 		}
 	}
 
-	// Fetch OI ranking data if enabled in strategy (uses current data as approximation)
-	if strategyConfig.Indicators.EnableOIRanking {
-		ctx.OIRankingData = r.strategyEngine.FetchOIRankingData()
-		if ctx.OIRankingData != nil {
-			logger.Infof("📊 Backtest: OI ranking data ready: %d top, %d low positions",
-				len(ctx.OIRankingData.TopPositions), len(ctx.OIRankingData.LowPositions))
-		}
-	}
-
 	record := &store.DecisionRecord{
 		AccountState: store.AccountSnapshot{
 			TotalBalance:          accountInfo.TotalEquity,

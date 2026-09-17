@@ -87,9 +87,6 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 
 				### 顺势交易
 				- 只在多个时间框架趋势一致时进场
-				- 结合持仓量(OI)变化判断资金流向真实性
-				- OI增加+价格上涨 = 强多头趋势
-				- OI减少+价格上涨 = 空头回补（可能反转）
 
 				### 分批操作
 				- 分批建仓：首次建仓不超过目标仓位的50%
@@ -137,8 +134,7 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 				1. **永远不要**混淆已实现盈亏和未实现盈亏
 				2. **永远记得**杠杆会放大盈亏
 				3. **永远关注**峰值PnL，这是止盈的关键
-				4. **永远结合**OI变化判断趋势真实性
-				5. **永远遵守**风险管理规则，保护本金是第一位
+				4. **永远遵守**风险管理规则，保护本金是第一位
 				`,
 			TradingFrequency: `
 				# 交易理念与最佳实践
@@ -174,12 +170,12 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 				可用数据：
 				- 原始序列：3分钟价格序列（MidPrices数组）+ 4小时K线序列
 				- 技术序列：EMA20、MACD、RSI7、RSI14等
-				- 资金序列：成交量、OI、资金费率
+				- 成交量序列
 				- 筛选标签：AI500分数/OI_Top排名（如有）
 
 				分析方法（完全自主）：
 				- 可自由使用序列数据，包括但不限于趋势分析、形态识别、支撑阻力、斐波那契、波动带等
-				- 多维交叉验证（价格+成交量+OI+指标+序列模式）
+				- 多维交叉验证（价格+成交量+指标+序列模式）
 				- 采用最有效方法寻找高确定性机会
 				- 综合信心≥75才可进场
 
@@ -226,7 +222,6 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 
 				3. **分析候选币种**（如有）：
 				- 技术形态是否符合进场标准？
-				- OI变化是否支持趋势？
 				- 多个时间框架是否共振？
 
 				4. **输出决策**：
@@ -252,7 +247,7 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 					"stop_loss": 0.1560,
 					"take_profit": 0.1720,
 					"confidence": 75,
-					"reasoning": "HUSDT在5分钟周期突破关键阻力0.1630，1小时OI增加+1.57M（+0.89%），配合价格上涨+4.92%，符合“OI增+价涨”强多头模式。15分钟和1小时周期均为上涨，多周期共振。建议做多，止损设在突破点下方-5%，止盈目标+8%。"
+					"reasoning": "HUSDT在5分钟周期突破关键阻力0.1630，配合价格上涨+4.92%，量价配合良好。15分钟和1小时周期均为上涨，多周期共振。建议做多，止损设在突破点下方-5%，止盈目标+8%。"
 				}
 				]
 				` + "```" + `
@@ -305,9 +300,6 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 
 				### Trend Following
 				- Only enter when trends align across multiple timeframes
-				- Use Open Interest (OI) changes to validate capital flow authenticity
-				- OI up + Price up = Strong bullish trend
-				- OI down + Price up = Shorts covering (potential reversal)
 
 				### Scale Operations
 				- Scale-in: First entry max 50% of target position
@@ -355,9 +347,8 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 				1. **Never** confuse realized and unrealized P&L
 				2. **Always remember** leverage amplifies both gains and losses
 				3. **Always watch** Peak PnL - it's key for take-profit decisions
-				4. **Always combine** OI changes to validate trend authenticity
-				5. **Always follow** risk management rules - capital protection is priority #1
-			`,
+				4. **Always follow** risk management rules - capital protection is priority #1
+				`,
 			TradingFrequency: `
 				# Trading Philosophy & Best Practices
 
@@ -399,12 +390,12 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 				Complete data available:
 				- Raw sequences: 3-min price sequence (MidPrices array) + 4-hour candle sequence
 				- Technical sequences: EMA20 sequence, MACD sequence, RSI7 sequence, RSI14 sequence
-				- Capital sequences: Volume sequence, Open Interest (OI) sequence, funding rate
+				- Volume sequence
 				- Filter markers: AI500 score / OI_Top ranking (if marked)
 
 				Analysis methods (fully autonomous):
 				- Freely use sequence data, you can but not limited to trend analysis, pattern recognition, support/resistance, Fibonacci, volatility bands
-				- Multi-dimensional cross-validation (price + volume + OI + indicators + sequence patterns)
+				- Multi-dimensional cross-validation (price + volume + indicators + sequence patterns)
 				- Use methods you deem most effective to discover high-certainty opportunities
 				- Combined confidence ≥ 75 to enter
 
@@ -451,7 +442,6 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 
 				3. **Analyze Candidate Coins** (if any):
 				- Does technical pattern meet entry criteria?
-				- Do OI changes support the trend?
 				- Do multiple timeframes align?
 
 				4. **Output Decision**:
@@ -477,7 +467,7 @@ var PromptTemplates = map[string]map[string]PromptSectionsConfig{
 					"stop_loss": 0.1560,
 					"take_profit": 0.1720,
 					"confidence": 75,
-					"reasoning": "HUSDT broke key resistance 0.1630 on 5M timeframe. OI increased +1.57M (+0.89%) in 1H paired with price +4.92%, matching 'OI up + price up' strong bullish pattern. Both 15M and 1H timeframes show uptrend, multi-timeframe resonance confirmed. Recommend long entry, stop-loss -5% below breakout, target +8% profit."
+					"reasoning": "HUSDT broke key resistance 0.1630 on 5M timeframe, paired with price +4.92% and healthy volume-price alignment. Both 15M and 1H timeframes show uptrend, multi-timeframe resonance confirmed. Recommend long entry, stop-loss -5% below breakout, target +8% profit."
 				}
 				]
 				` + "```" + `
@@ -1103,12 +1093,6 @@ func (c *StrategyConfig) AvailableIndicatorsString(sb *strings.Builder, lang str
 		if indicators.EnableVolume {
 			sb.WriteString("- 成交量数据\n")
 		}
-		if indicators.EnableOI {
-			sb.WriteString("- 持仓量（OI）数据\n")
-		}
-		if indicators.EnableFundingRate {
-			sb.WriteString("- 资金费率\n")
-		}
 		if len(c.CoinSource.StaticCoins) > 0 || c.CoinSource.UseCoinPool || c.CoinSource.UseOITop {
 			sb.WriteString("- AI500 / OI_Top 筛选标签（如有）\n")
 		}
@@ -1156,12 +1140,6 @@ func (c *StrategyConfig) AvailableIndicatorsString(sb *strings.Builder, lang str
 		}
 		if indicators.EnableVolume {
 			sb.WriteString("- Volume data\n")
-		}
-		if indicators.EnableOI {
-			sb.WriteString("- Open Interest (OI) data\n")
-		}
-		if indicators.EnableFundingRate {
-			sb.WriteString("- Funding rate\n")
 		}
 		if len(c.CoinSource.StaticCoins) > 0 || c.CoinSource.UseCoinPool || c.CoinSource.UseOITop {
 			sb.WriteString("- AI500 / OI_Top filter tags (if available)\n")

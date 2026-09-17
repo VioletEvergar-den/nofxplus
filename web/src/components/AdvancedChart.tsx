@@ -77,6 +77,15 @@ const formatPrice = (price: number | undefined): string => {
   return price.toFixed(6)
 }
 
+// 根据价格量级推导图表价格轴精度（小币种如 DOGE 需要更多小数位，否则被抹平）
+const derivePricePrecision = (price: number): number => {
+  if (!isFinite(price) || price <= 0) return 2
+  if (price >= 100) return 2
+  if (price >= 1) return 4
+  if (price >= 0.01) return 5
+  return 6
+}
+
 export function AdvancedChart({
   symbol = 'BTCUSDT',
   interval = '5m',
@@ -98,6 +107,8 @@ export function AdvancedChart({
   const currentMarkersDataRef = useRef<any[]>([]) // 存储当前的标记数据
   const klineDataRef = useRef<Map<number, { volume: number; quoteVolume: number }>>(new Map()) // 存储 kline 额外数据
   const lastKlineDataRef = useRef<Kline[]>([]) // 上一次完整 K 线快照，用于增量对比避免每 5 秒全量重绘
+  // 手动价格区间（价格轴滚轮垂直缩放）：非 null 时蜡烛序列的 autoscaleInfoProvider 返回该区间
+  const manualPriceRangeRef = useRef<{ min: number; max: number } | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -341,7 +352,7 @@ export function AdvancedChart({
         borderColor: '#2B3139',
         scaleMargins: {
           top: 0.1,
-          bottom: 0.25,
+          bottom: 0.08, // 成交量已移至独立副图，主图无需预留底部空间
         },
         borderVisible: true,
         entireTextOnly: false,
@@ -381,7 +392,7 @@ export function AdvancedChart({
 
     chartRef.current = chart
 
-    // 创建K线系列
+    // 创建K线系列（带手动价格区间支持：价格轴滚轮垂直缩放时覆盖自动缩放）
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#0ECB81',
       downColor: '#F6465D',
@@ -389,20 +400,92 @@ export function AdvancedChart({
       borderDownColor: '#F6465D',
       wickUpColor: '#0ECB81',
       wickDownColor: '#F6465D',
+      autoscaleInfoProvider: (base: any) => {
+        if (manualPriceRangeRef.current) {
+          return {
+            priceRange: {
+              minValue: manualPriceRangeRef.current.min,
+              maxValue: manualPriceRangeRef.current.max,
+            },
+          }
+        }
+        return base()
+      },
     })
     candlestickSeriesRef.current = candlestickSeries as any
 
-    // 创建成交量系列
+    // 创建成交量系列（独立副图 pane 1，与主图用分隔线隔离）
     const volumeSeries = chart.addSeries(HistogramSeries, {
       color: '#26a69a',
       priceFormat: {
         type: 'volume',
       },
-      priceScaleId: '',
+      priceScaleId: 'right',
       lastValueVisible: false,
       priceLineVisible: false,
-    })
+    }, 1)
     volumeSeriesRef.current = volumeSeries as any
+
+    // 主图:副图 = 4:1，v5 自带 pane 分隔线
+    try {
+      const panes = chart.panes()
+      if (panes.length > 1) {
+        panes[0].setStretchFactor(4)
+        panes[1].setStretchFactor(1)
+      }
+    } catch { /* 忽略 panes API 兼容性问题 */ }
+    try {
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.15, bottom: 0 },
+      })
+    } catch { /* 忽略 */ }
+
+    // 价格轴滚轮垂直缩放：鼠标悬停在右侧价格轴（主图区域）时滚轮缩放价格范围
+    const chartEl = chartContainerRef.current
+    const handlePriceAxisWheel = (e: WheelEvent) => {
+      const c = chartRef.current
+      const series = candlestickSeriesRef.current
+      if (!c || !series || !chartEl) return
+      const rect = chartEl.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      let axisWidth = 60
+      try {
+        axisWidth = c.priceScale('right').width() || 60
+      } catch { /* 默认值兜底 */ }
+      if (x < rect.width - axisWidth) return // 不在价格轴区域，走默认缩放
+      const mainPaneHeight = c.panes()[0]?.getHeight() ?? rect.height
+      if (y > mainPaneHeight) return // 副图区域不做主图缩放
+      e.preventDefault()
+      e.stopImmediatePropagation()
+
+      const top = series.coordinateToPrice(0) as any
+      const bottom = series.coordinateToPrice(mainPaneHeight) as any
+      if (top == null || bottom == null || !isFinite(top) || !isFinite(bottom)) return
+      const anchor = series.coordinateToPrice(y) as any
+      const anchorPrice = anchor != null && isFinite(anchor) ? anchor : (top + bottom) / 2
+      // 向上滚 = 拉伸放大（范围缩小），向下滚 = 压缩缩小
+      const factor = e.deltaY < 0 ? 0.85 : 1.15
+      const newMin = anchorPrice + (bottom - anchorPrice) * factor
+      const newMax = anchorPrice + (top - anchorPrice) * factor
+      if (!isFinite(newMin) || !isFinite(newMax) || newMax <= newMin) return
+      manualPriceRangeRef.current = { min: newMin, max: newMax }
+      // 重新应用 provider 触发图表重算缩放
+      series.applyOptions({
+        autoscaleInfoProvider: (base: any) => {
+          if (manualPriceRangeRef.current) {
+            return {
+              priceRange: {
+                minValue: manualPriceRangeRef.current.min,
+                maxValue: manualPriceRangeRef.current.max,
+              },
+            }
+          }
+          return base()
+        },
+      } as any)
+    }
+    chartEl?.addEventListener('wheel', handlePriceAxisWheel, { capture: true, passive: false })
 
     // 响应式调整
     const handleResize = () => {
@@ -448,6 +531,7 @@ export function AdvancedChart({
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      chartEl?.removeEventListener('wheel', handlePriceAxisWheel, { capture: true } as any)
       chart.remove()
     }
   }, [height])
@@ -457,6 +541,8 @@ export function AdvancedChart({
     // 当 symbol 或 interval 改变时，重置初始加载标志（以便自动适配新数据）
     isInitialLoadRef.current = true
     lastKlineDataRef.current = []
+    // 切换币种/周期时清除价格轴手动缩放区间，恢复自动缩放
+    manualPriceRangeRef.current = null
 
     // 清除旧的标记数据，避免旧数据影响新图表
     currentMarkersDataRef.current = []
@@ -521,6 +607,18 @@ export function AdvancedChart({
             candlestickSeriesRef.current.update(klineData[i] as any)
           }
         } else if (applyMode === 'full') {
+          // 全量路径：按最新价格量级动态设置价格轴精度（小币种如 DOGE 需 4~6 位小数，避免被抹平）
+          const lastClose = klineData[klineData.length - 1]?.close
+          if (lastClose !== undefined) {
+            const precision = derivePricePrecision(lastClose)
+            candlestickSeriesRef.current.applyOptions({
+              priceFormat: {
+                type: 'price',
+                precision,
+                minMove: Math.pow(10, -precision),
+              },
+            } as any)
+          }
           candlestickSeriesRef.current.setData(klineData)
         }
         lastKlineDataRef.current = klineData
@@ -732,6 +830,12 @@ export function AdvancedChart({
   const updateIndicators = (klineData: Kline[]) => {
     if (!chartRef.current) return
 
+    // 叠加指标 autoscale：手动价格区间激活时不贡献范围，避免把主图拉回自动缩放
+    const overlayAutoscale = (base: any) => {
+      if (manualPriceRangeRef.current) return null
+      return base()
+    }
+
     // 清除旧指标
     indicatorSeriesRef.current.forEach(series => {
       chartRef.current?.removeSeries(series as any)
@@ -748,7 +852,8 @@ export function AdvancedChart({
           color: indicator.color,
           lineWidth: 2,
           title: indicator.name,
-        })
+          autoscaleInfoProvider: overlayAutoscale,
+        } as any)
         series.setData(maData as any)
         indicatorSeriesRef.current.set(indicator.id, series)
       } else if (indicator.id.startsWith('ema')) {
@@ -758,7 +863,8 @@ export function AdvancedChart({
           lineWidth: 2,
           title: indicator.name,
           lineStyle: 2, // 虚线
-        })
+          autoscaleInfoProvider: overlayAutoscale,
+        } as any)
         series.setData(emaData as any)
         indicatorSeriesRef.current.set(indicator.id, series)
       } else if (indicator.id === 'bb') {
@@ -768,7 +874,8 @@ export function AdvancedChart({
           color: indicator.color,
           lineWidth: 1,
           title: 'BB Upper',
-        })
+          autoscaleInfoProvider: overlayAutoscale,
+        } as any)
         upperSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.upper })))
 
         const middleSeries = chartRef.current.addSeries(LineSeries, {
@@ -776,14 +883,16 @@ export function AdvancedChart({
           lineWidth: 1,
           lineStyle: 2,
           title: 'BB Middle',
-        })
+          autoscaleInfoProvider: overlayAutoscale,
+        } as any)
         middleSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.middle })))
 
         const lowerSeries = chartRef.current.addSeries(LineSeries, {
           color: indicator.color,
           lineWidth: 1,
           title: 'BB Lower',
-        })
+          autoscaleInfoProvider: overlayAutoscale,
+        } as any)
         lowerSeries.setData(bbData.map(d => ({ time: d.time as any, value: d.lower })))
 
         indicatorSeriesRef.current.set(indicator.id + '_upper', upperSeries)

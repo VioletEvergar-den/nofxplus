@@ -183,7 +183,7 @@ func (e *DebateEngine) runDebate(session *store.DebateSessionWithDetails, strate
 	// Build system prompt based on strategy (same as AI Test)
 	baseSystemPrompt := strategyEngine.BuildSystemPromptWithContext(1000.0, ctx)
 
-	// Build user prompt with market data (OI ranking data is included via ctx.OIRankingData)
+	// Build user prompt with market data
 	userPrompt := strategyEngine.BuildUserPrompt(ctx)
 
 	// Run debate rounds
@@ -333,9 +333,6 @@ func (e *DebateEngine) buildMarketContext(session *store.DebateSessionWithDetail
 	}
 	quantDataMap := strategyEngine.FetchQuantDataBatch(symbols)
 
-	// Fetch OI ranking data (market-wide position changes)
-	oiRankingData := strategyEngine.FetchOIRankingData()
-
 	// Build context
 	ctx := &decision.Context{
 		CurrentTime:    time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
@@ -356,7 +353,6 @@ func (e *DebateEngine) buildMarketContext(session *store.DebateSessionWithDetail
 		PromptVariant:  session.PromptTemplate, // Use template as variant ID for debate
 		MarketDataMap:  marketDataMap,
 		QuantDataMap:   quantDataMap,
-		OIRankingData:  oiRankingData,
 	}
 
 	return ctx, nil

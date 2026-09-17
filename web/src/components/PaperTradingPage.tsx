@@ -35,6 +35,7 @@ export function PaperTradingPage() {
   const [positions, setPositions] = useState<Position[]>([])
   const [decisions, setDecisions] = useState<DecisionRecord[]>([])
   const [symbol, setSymbol] = useState('BTCUSDT')
+  const [symbolInput, setSymbolInput] = useState('BTCUSDT')
   const [interval, setIntervalKey] = useState('5m')
   const [loading, setLoading] = useState(true)
   const [closingKey, setClosingKey] = useState<string>('')
@@ -128,6 +129,15 @@ export function PaperTradingPage() {
   const pnlColor = (v: number | undefined) =>
     (v ?? 0) > 0 ? 'text-[#0ECB81]' : (v ?? 0) < 0 ? 'text-[#F6465D]' : 'text-[#848E9C]'
 
+  // 应用自定义币种：大写、去空格与斜杠，缺 USDT 后缀时自动补全
+  const applySymbol = (raw: string) => {
+    let s = raw.trim().toUpperCase().replace(/[/\s]/g, '')
+    if (!s) return
+    if (!s.endsWith('USDT') && !s.endsWith('USD') && !s.endsWith('USDC')) s += 'USDT'
+    setSymbol(s)
+    setSymbolInput(s)
+  }
+
   return (
     <div
       className="h-full flex flex-col overflow-hidden"
@@ -144,15 +154,23 @@ export function PaperTradingPage() {
             PAPER
           </span>
         </div>
-        <select
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          className="px-2.5 py-1.5 bg-[#0B0E11] border border-[#2B3139] rounded text-sm text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
-        >
+        <input
+          value={symbolInput}
+          onChange={(e) => setSymbolInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') applySymbol((e.target as HTMLInputElement).value)
+          }}
+          onBlur={(e) => applySymbol(e.target.value)}
+          list="paper-symbol-list"
+          spellCheck={false}
+          placeholder={zh ? '输入币种，如 DOGEUSDT' : 'Symbol, e.g. DOGEUSDT'}
+          className="w-[170px] px-2.5 py-1.5 bg-[#0B0E11] border border-[#2B3139] rounded text-sm text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+        />
+        <datalist id="paper-symbol-list">
           {SYMBOLS.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s} />
           ))}
-        </select>
+        </datalist>
         <div className="flex gap-1">
           {INTERVALS.map((iv) => (
             <button

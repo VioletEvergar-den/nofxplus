@@ -1443,16 +1443,6 @@ func (at *AutoTrader) buildTradingContext() (*decision.Context, error) {
 		logger.Infof("📊 [%s] Successfully fetched quantitative data for %d symbols", at.name, len(ctx.QuantDataMap))
 	}
 
-	// 9. Get OI ranking data (market-wide position changes)
-	if strategyConfig.Indicators.EnableOIRanking {
-		logger.Infof("📊 [%s] Fetching OI ranking data...", at.name)
-		ctx.OIRankingData = at.strategyEngine.FetchOIRankingData()
-		if ctx.OIRankingData != nil {
-			logger.Infof("📊 [%s] OI ranking data ready: %d top, %d low positions",
-				at.name, len(ctx.OIRankingData.TopPositions), len(ctx.OIRankingData.LowPositions))
-		}
-	}
-
 	// Update market data monitors with fresh data
 	if ctx.MarketDataMap != nil {
 		for _, marketData := range ctx.MarketDataMap {

@@ -443,9 +443,6 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 	}
 	quantDataMap := engine.FetchQuantDataBatch(symbols)
 
-	// Fetch OI ranking data (market-wide position changes)
-	oiRankingData := engine.FetchOIRankingData()
-
 	// Build real context (for generating User Prompt)
 	testContext := &decision.Context{
 		CurrentTime:    time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
@@ -466,7 +463,6 @@ func (s *Server) handleStrategyTestRun(c *gin.Context) {
 		PromptVariant:  req.PromptTemplate,
 		MarketDataMap:  marketDataMap,
 		QuantDataMap:   quantDataMap,
-		OIRankingData:  oiRankingData,
 	}
 
 	// Build System Prompt
